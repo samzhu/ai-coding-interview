@@ -1,0 +1,130 @@
+id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
+title: "Java 日誌解析器"
+description: |
+  You inherit a log analysis tool that parses timestamped log entries and computes statistics.
+
+  Log format: "HH:MM:SS [LEVEL] message"
+  Example: "14:30:45 [ERROR] Connection timeout"
+
+  Common AI-generated pitfalls:
+  - Comparing timestamps as strings (lexicographic) instead of parsing to seconds
+  - Using integer division for average duration (losing decimal precision)
+
+  Your tasks across 3 checkpoints:
+  1. Fix a string-comparison bug in the timestamp sorter
+  2. Implement log parsing and duration calculation
+  3. Handle edge cases: midnight crossover, empty logs, multiple log levels
+difficulty: MEDIUM
+language: java
+type: EXTEND
+level: JUNIOR
+
+projectFiles:
+  - filePath: LogParser.java
+    editable: true
+    sortOrder: 1
+  - filePath: LogEntry.java
+    editable: false
+    sortOrder: 2
+  - filePath: TestCP1.java
+    editable: false
+    sortOrder: 3
+  - filePath: TestCP2.java
+    editable: false
+    sortOrder: 4
+  - filePath: TestCP3.java
+    editable: false
+    sortOrder: 5
+
+checkpoints:
+  - id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa11"
+    sequenceNumber: 1
+    title: "Phase 1: Bug Fix — 修復時間戳排序"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `LogParser.java` 的 `sortByTime()` 方法使用字串比較（`compareTo`）排序時間戳，
+      這在大多數情況下可以工作，但有一個**隱藏 Bug**：
+
+      字串比較是字典序，對於 HH:MM:SS 格式來說通常正確，
+      但如果跨越午夜（如 23:59:00 和 00:01:00），字串比較會把 `00:01:00` 排在 `23:59:00` 之前，
+      而實際上 00:01:00 是隔天的（應排在後面）。
+
+      更根本的問題：timestamp 應轉換為秒數再比較，確保計算正確。
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP1
+      ```
+
+      ### 任務
+
+      修復 `sortByTime()` 使用 `parseToSeconds()` 方法進行比較。
+
+      ⚠️ **字串比較時間戳是常見的 AI 陷阱**
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP1"
+    aiEnabled: true
+
+  - id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa12"
+    sequenceNumber: 2
+    title: "Phase 2: 實作日誌解析與統計"
+    description: |
+      ## Checkpoint 2: Core Implementation（可使用 AI）
+
+      在 `LogParser.java` 中實作 3 個方法：
+
+      ### `parse(String[] lines) -> List<LogEntry>`
+      解析每一行日誌，格式：`"HH:MM:SS [LEVEL] message"`
+      - 回傳 `LogEntry` 物件列表
+      - 跳過格式不正確的行
+
+      ### `filterByLevel(List<LogEntry> entries, String level) -> List<LogEntry>`
+      回傳指定 log level 的 entry 列表（大小寫不敏感）。
+
+      ### `averageDuration(List<LogEntry> entries) -> double`
+      計算所有 entry 之間的平均間隔秒數：
+      - 對 entries 排序（用 `sortByTime`）
+      - 計算相鄰 entry 的時間差
+      - 回傳平均間隔（精確到 2 位小數）
+      - 若 entries 少於 2 個，回傳 0.0
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP2
+      ```
+
+      ### 重要提示
+
+      ⚠️ **整數除法陷阱**：計算平均值時必須使用 `(double) sum / count`，
+      避免整數除法截斷小數。
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP2"
+    aiEnabled: true
+
+  - id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa13"
+    sequenceNumber: 3
+    title: "Phase 3: Edge Cases 驗證"
+    description: |
+      ## Checkpoint 3: Edge Cases（可使用 AI）
+
+      確保你的日誌解析器正確處理所有邊界條件：
+
+      1. **空日誌**：空陣列回傳空 list，`averageDuration` 回傳 0.0
+      2. **單一 entry**：`averageDuration` 回傳 0.0
+      3. **格式錯誤的行**：`parse()` 應跳過，不拋出例外
+      4. **大小寫不敏感 level 過濾**：`filterByLevel(..., "error")` 和 `"ERROR"` 都應有效
+      5. **相同時間戳**：兩個相同時間的 entry，間隔為 0 秒
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP3
+      ```
+
+      ### 評分重點
+
+      - 說明你的 `parseToSeconds()` 如何處理跨午夜情境
+      - 解釋為何整數除法在此處是個陷阱
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP3"
+    aiEnabled: true

@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: 'postgres:17'
+    environment:
+      - 'POSTGRES_DB=interview_db'
+      - 'POSTGRES_PASSWORD=interview'
+      - 'POSTGRES_USER=interview'
+    ports:
+      - '5432'
+
+  dind:
+    image: docker:27-dind
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    ports:
+      - '2375:2375'
+    volumes:
+      - dind-storage:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  dind-init:
+    image: docker:27-cli
+    environment:
+      DOCKER_HOST: tcp://dind:2375
+    depends_on:
+      dind:
+        condition: service_healthy
+    command: >
+      sh -c "docker pull eclipse-temurin:25-jdk && echo 'Execution image ready'"
+    restart: "no"
+
+volumes:
+  dind-storage:

@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/001-create-interview-table.sql
+  - include:
+      file: db/changelog/002-create-event-publication-table.sql
+  - include:
+      file: db/changelog/005-alter-interviews-add-question-id.sql
+  - include:
+      file: db/changelog/006-create-checkpoint-results-table.sql
+  - include:
+      file: db/changelog/007-create-invitations-table.sql
+  - include:
+      file: db/changelog/008-create-ai-conversations-table.sql
+  - include:
+      file: db/changelog/012-alter-interviews-add-ai-model.sql
+  - include:
+      file: db/changelog/015-alter-interviews-add-timer.sql
+  - include:
+      file: db/changelog/021-alter-interviews-default-ai-model.sql
+  - include:
+      file: db/changelog/022-alter-ai-conversations-add-version.sql

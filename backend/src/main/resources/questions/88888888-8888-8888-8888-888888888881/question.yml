@@ -1,0 +1,126 @@
+id: "88888888-8888-8888-8888-888888888881"
+title: "JavaScript URL 路由器"
+description: |
+  You inherit a URL router module for a web framework.
+
+  The router matches URL paths to handler names using pattern matching:
+  - Static segments: /users/profile matches exactly
+  - Dynamic segments: /users/:id matches any single segment
+  - Wildcard: /files/* matches any remaining path
+
+  Common AI-generated pitfalls:
+  - Greedy regex (.+) matching too much
+  - Forgetting decodeURIComponent for URL-encoded path segments
+
+  Your tasks across 3 checkpoints:
+  1. Fix a greedy regex bug in the dynamic segment matcher
+  2. Implement the full route matching logic with parameter extraction
+  3. Handle edge cases: encoded URLs, trailing slashes, multiple params
+difficulty: MEDIUM
+language: javascript
+type: EXTEND
+level: JUNIOR
+
+projectFiles:
+  - filePath: router.js
+    editable: true
+    sortOrder: 1
+  - filePath: utils.js
+    editable: false
+    sortOrder: 2
+  - filePath: tests/test_cp1.js
+    editable: false
+    sortOrder: 3
+  - filePath: tests/test_cp2.js
+    editable: false
+    sortOrder: 4
+  - filePath: tests/test_cp3.js
+    editable: false
+    sortOrder: 5
+
+checkpoints:
+  - id: "88888888-8888-8888-8888-888888888811"
+    sequenceNumber: 1
+    title: "Phase 1: Bug Fix — 修復貪婪 Regex"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `router.js` 的 `patternToRegex()` 函式有一個 **Bug**：
+      動態段（`:param`）使用了貪婪匹配 `(.+)` 而不是非貪婪的單段匹配 `([^/]+)`。
+
+      這導致 `/users/:id/profile` 的 `:id` 會匹配 `123/profile` 而非只有 `123`。
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && node tests/test_cp1.js
+      ```
+
+      ### Bug 提示（只在卡住時看）
+
+      在 regex 中，`(.+)` 會匹配一個或多個任意字元（包含 `/`）。
+      要只匹配到下一個 `/`，應使用 `([^/]+)`（排除斜線的字元集）。
+
+      ⚠️ **AI 的第一直覺通常是 (.+)，這正是這道題的陷阱**
+    testCommand: "cd /tmp/workspace && node tests/test_cp1.js"
+    aiEnabled: true
+
+  - id: "88888888-8888-8888-8888-888888888812"
+    sequenceNumber: 2
+    title: "Phase 2: 實作路由匹配與參數提取"
+    description: |
+      ## Checkpoint 2: Core Implementation（可使用 AI）
+
+      在 `router.js` 中完成 `match(path)` 方法：
+
+      ### 功能需求
+
+      - 遍歷所有已註冊的路由（pattern → handler）
+      - 將 path 與每個 pattern 轉換的 regex 比對
+      - 若匹配，提取所有具名參數（`:param` → 值）
+      - 套用 `decodeURIComponent` 處理 URL 編碼的參數值
+      - 回傳 `{ handler, params }` 或 `null`（若無匹配）
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && node tests/test_cp2.js
+      ```
+
+      ### 重要提示
+
+      ⚠️ **URL 解碼陷阱**：path 中的 `%20`、`%2F` 等編碼字元
+      必須用 `decodeURIComponent()` 解碼，否則參數值會包含原始編碼字串。
+
+      ### AI 協作建議
+
+      口述你的匹配邏輯流程，再請 AI 幫你提取具名捕獲組的部分。
+    testCommand: "cd /tmp/workspace && node tests/test_cp2.js"
+    aiEnabled: true
+
+  - id: "88888888-8888-8888-8888-888888888813"
+    sequenceNumber: 3
+    title: "Phase 3: Edge Cases 驗證"
+    description: |
+      ## Checkpoint 3: Edge Cases（可使用 AI）
+
+      確保你的路由器正確處理所有邊界條件：
+
+      1. **URL 編碼參數**：`/users/John%20Doe` → params.id = "John Doe"
+      2. **多個動態參數**：`/users/:id/posts/:postId` 同時提取兩個參數
+      3. **結尾斜線**：`/users/` 與 `/users` 是否視為相同？（依設計決定）
+      4. **無匹配路由**：`match()` 回傳 `null`
+      5. **Wildcard 路由**：`/files/*` 匹配 `/files/a/b/c`
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && node tests/test_cp3.js
+      ```
+
+      ### 評分重點
+
+      - 解釋貪婪 vs 非貪婪 regex 的差異
+      - 說明何時需要用 `decodeURIComponent`
+    testCommand: "cd /tmp/workspace && node tests/test_cp3.js"
+    aiEnabled: true

@@ -1,0 +1,155 @@
+id: "dddddddd-dddd-dddd-dddd-ddddddddddd1"
+title: "Spring Boot 書店 REST API"
+description: |
+  You join a bookstore development team and take over a partially completed book management REST API.
+
+  The BookService has some methods with bugs, and some methods not yet implemented.
+  Your tasks across 4 checkpoints:
+  1. Fix bugs in BookService.findById()
+  2. Implement createBook() with validation
+  3. Implement searchBooks() with multi-criteria filtering
+  4. Handle edge cases and input validation
+difficulty: MEDIUM
+language: java
+type: EXTEND
+level: JUNIOR
+
+projectFiles:
+  - filePath: Book.java
+    editable: false
+    sortOrder: 1
+  - filePath: BookRepository.java
+    editable: false
+    sortOrder: 2
+  - filePath: BookService.java
+    editable: true
+    sortOrder: 3
+  - filePath: ValidationHelper.java
+    editable: false
+    sortOrder: 4
+  - filePath: TestCP1.java
+    editable: false
+    sortOrder: 5
+  - filePath: TestCP2.java
+    editable: false
+    sortOrder: 6
+  - filePath: TestCP3.java
+    editable: false
+    sortOrder: 7
+  - filePath: TestCP4.java
+    editable: false
+    sortOrder: 8
+
+checkpoints:
+  - id: "dddddddd-dddd-dddd-dddd-dddddddddd11"
+    sequenceNumber: 1
+    title: "Bug Fix — findById() 回傳錯誤"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `BookService.findById(String id)` has **2 bugs** causing test failures.
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP1
+      ```
+
+      ### Debugging Hints (only if stuck)
+
+      **Bug 1:** What happens when `findById()` is called with an ID that doesn't exist in the repository?
+      Trace the code path when `Optional.empty()` is returned.
+
+      **Bug 2:** The `id` parameter is a `String`, but the repository expects a `Long`.
+      What happens when a non-numeric string is passed?
+
+      ### Scoring Focus
+
+      This checkpoint tests your **reading comprehension** and **hypothesis-driven debugging**.
+      Explain your hypothesis before making changes.
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP1"
+    aiEnabled: false
+
+  - id: "dddddddd-dddd-dddd-dddd-dddddddddd12"
+    sequenceNumber: 2
+    title: "Implement createBook() — 新增書籍"
+    description: |
+      ## Checkpoint 2: Implement createBook()
+
+      Implement `BookService.createBook(String title, String author, String isbn, double price)`:
+
+      - Use `ValidationHelper.validateIsbn(isbn)` to validate ISBN format. If invalid, throw `ValidationException` with the message from the helper.
+      - Use `ValidationHelper.validatePrice(price)` to validate price range. If invalid, throw `ValidationException`.
+      - Check for duplicate ISBN — if another book already has this ISBN, throw `DuplicateIsbnException(isbn)`.
+      - Create a `Book` object with auto-generated ID, status = `"AVAILABLE"`.
+      - Save to repository and return the created book.
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP2
+      ```
+
+      ### Tips
+
+      - Look at how `BookRepository` works — it has a `findByIsbn()` method.
+      - The `Book` constructor expects: `(Long id, String title, String author, String isbn, double price, String status)`.
+      - Use `BookRepository.nextId()` to generate the next ID.
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP2"
+    aiEnabled: true
+
+  - id: "dddddddd-dddd-dddd-dddd-dddddddddd13"
+    sequenceNumber: 3
+    title: "Implement searchBooks() — 查詢篩選"
+    description: |
+      ## Checkpoint 3: Implement searchBooks()
+
+      Implement `BookService.searchBooks(String author, String status, Double minPrice, Double maxPrice)`:
+
+      - All parameters are optional (null = no filter).
+      - Multiple filters are combined with AND logic.
+      - Return `List<Book>` sorted by title alphabetically (case-insensitive).
+      - Empty results return an empty list (not null).
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP3
+      ```
+
+      ### Filtering Rules
+
+      - `author`: exact match (case-insensitive)
+      - `status`: exact match (case-insensitive)
+      - `minPrice`: inclusive (book.price >= minPrice)
+      - `maxPrice`: inclusive (book.price <= maxPrice)
+      - Only non-null parameters are applied as filters.
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP3"
+    aiEnabled: true
+
+  - id: "dddddddd-dddd-dddd-dddd-dddddddddd14"
+    sequenceNumber: 4
+    title: "Edge Cases — 錯誤處理與邊界條件"
+    description: |
+      ## Checkpoint 4: Edge Cases
+
+      Ensure all methods handle boundary conditions correctly:
+
+      1. **Null id**: `findById(null)` should throw `IllegalArgumentException`
+      2. **Empty string title/author**: `createBook("", ...)` should throw `ValidationException`
+      3. **Null title/author**: `createBook(null, ...)` should throw `ValidationException`
+      4. **Deleted books**: `findById()` on a book with status `"DELETED"` should throw `BookNotFoundException`
+      5. **Search sorting**: Verify results are sorted by title case-insensitively
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP4
+      ```
+
+      ### Scoring Focus
+
+      This checkpoint evaluates whether you proactively consider edge cases
+      and validate inputs at service boundaries.
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP4"
+    aiEnabled: true

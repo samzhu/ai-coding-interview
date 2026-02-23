@@ -1,0 +1,61 @@
+"use client";
+
+import { useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { apiPost, apiGet, ApiError } from "@/lib/api-client";
+import { useInterview } from "@/contexts/interview-context";
+import type { CheckpointResultResponse } from "@/types";
+
+export function useCodeSubmission() {
+  const router = useRouter();
+  const { state, setSubmitting, setCheckpoint, applyCheckpointResult, getEditableFiles } =
+    useInterview();
+
+  const submit = useCallback(async () => {
+    if (!state.checkpoint || state.isSubmitting) return;
+
+    setSubmitting(true);
+
+    try {
+      const isProjectMode =
+        state.checkpoint.projectFiles && state.checkpoint.projectFiles.length > 0;
+
+      const body = isProjectMode
+        ? { files: getEditableFiles() }
+        : { code: state.code };
+
+      const result = await apiPost<CheckpointResultResponse>(
+        `/interviews/${state.interviewId}/checkpoints/${state.checkpoint.checkpointId}/submit`,
+        body
+      );
+
+      if (result.status === "PASSED") {
+        applyCheckpointResult(result, null);
+
+        // Wait briefly then fetch the next checkpoint
+        await new Promise((r) => setTimeout(r, 1000));
+
+        try {
+          const next = await apiGet<CheckpointResultResponse>(
+            `/interviews/${state.interviewId}/checkpoints/current`
+          );
+          setCheckpoint(next);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) {
+            // No more checkpoints — interview complete
+            router.push(`/interview/${state.interviewId}/complete`);
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        applyCheckpointResult(result, null);
+      }
+    } catch (err) {
+      setSubmitting(false);
+      throw err;
+    }
+  }, [state, setSubmitting, setCheckpoint, applyCheckpointResult, getEditableFiles, router]);
+
+  return { submit };
+}

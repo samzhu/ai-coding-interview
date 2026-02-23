@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: ai-coding-interview
+  threads:
+    virtual:
+      enabled: true
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    enabled: true
+  jpa:
+    show-sql: false
+  mvc:
+    problemdetails:
+      enabled: true
+aci:
+  models:
+    - id: gemini-2.5-flash
+      name: Gemini 2.5 Flash
+      provider: google-genai
+      api-key: ${GOOGLE_GENAI_API_KEY:}
+      temperature: 0.7
+    - id: gemini-2.0-flash
+      name: Gemini 2.0 Flash
+      provider: google-genai
+      api-key: ${GOOGLE_GENAI_API_KEY:}
+      temperature: 0.7
+
+server:
+  port: 8080
+  shutdown: graceful
+
+admin:
+  token: ${ADMIN_TOKEN:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+execution:
+  docker:
+    host: ${DOCKER_HOST:tcp://localhost:2375}
+    tls-verify: ${DOCKER_TLS_VERIFY:false}
+    cert-path: ${DOCKER_CERT_PATH:}
+    image: ${EXECUTION_DOCKER_IMAGE:eclipse-temurin:25-jdk}

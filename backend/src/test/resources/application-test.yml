@@ -1,0 +1,13 @@
+spring:
+  liquibase:
+    enabled: true
+
+logging:
+  level:
+    org.springframework.modulith: DEBUG
+    org.springframework.data.jdbc: DEBUG
+
+execution:
+  docker:
+    host: ${DOCKER_HOST:unix:///var/run/docker.sock}
+    image: eclipse-temurin:25-jdk

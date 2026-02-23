@@ -1,0 +1,151 @@
+id: "55555555-5555-5555-5555-555555555551"
+title: "Java 猜字遊戲（Hangman）"
+description: |
+  You inherit a Hangman word-guessing game project with a Game class and a HintProvider module.
+
+  The game lets a player guess letters one at a time to reveal a hidden word:
+  - Each wrong guess costs one life (default: 6 lives)
+  - The player wins when all letters are revealed
+  - The player loses when lives reach zero
+
+  Your tasks across 3 checkpoints:
+  1. Fix bugs in the Game class causing incorrect game state tracking
+  2. Implement the HintProvider class (letter frequency hints, position hints, scoring)
+  3. Handle edge cases: empty word, case insensitivity, repeated guesses, single-letter words
+difficulty: MEDIUM
+language: java
+type: EXTEND
+level: JUNIOR
+
+projectFiles:
+  - filePath: Game.java
+    editable: true
+    sortOrder: 1
+  - filePath: HintProvider.java
+    editable: true
+    sortOrder: 2
+  - filePath: GameConfig.java
+    editable: false
+    sortOrder: 3
+  - filePath: TestCP1.java
+    editable: false
+    sortOrder: 4
+  - filePath: TestCP2.java
+    editable: false
+    sortOrder: 5
+  - filePath: TestCP3.java
+    editable: false
+    sortOrder: 6
+
+checkpoints:
+  - id: "55555555-5555-5555-5555-555555555511"
+    sequenceNumber: 1
+    title: "Phase 1: Bug Fix — 修復遊戲邏輯"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `Game.java` 已有完整的 Hangman 實作，但有 **2 個 Bug** 導致測試失敗。
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP1
+      ```
+
+      ### Bug 提示（只在卡住時看）
+
+      **Bug 1：** 仔細閱讀 `processGuess()` — 重複猜測的處理邏輯是否正確？
+      追蹤當同一個錯誤字母被猜兩次時，生命值會變化幾次？
+
+      **Bug 2：** 比較 `isGameWon()` 和 `isGameLost()` 的回傳條件 —
+      「贏」和「輸」的條件應該有什麼不同？
+
+      ### 評分重點
+
+      此 Checkpoint 考察你**閱讀陌生 Java Codebase** 與**假設驅動除錯**的能力。
+      建議先口頭說明你的假設，再動手修改。
+
+      💡 **AI 可用，但評估的是你的獨立除錯能力：盲目貼錯誤訊息給 AI 是負面信號**
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP1"
+    aiEnabled: true
+
+  - id: "55555555-5555-5555-5555-555555555512"
+    sequenceNumber: 2
+    title: "Phase 2: Core Implementation — 提示系統與計分"
+    description: |
+      ## Checkpoint 2: Core Implementation（可使用 AI）
+
+      在 `HintProvider.java` 中實作 3 個方法：
+
+      ### `getLetterFrequencyHint(String word, Set<Character> guessed)`
+
+      - 計算 word 中每個字元出現的次數
+      - 過濾掉 guessed 中已有的字元
+      - 回傳出現次數最多的未猜字元（並列時回傳字母序最前的）
+      - 若全部已猜或 word 為空，回傳 `null`
+
+      ### `getPositionHint(String word, Set<Character> guessed)`
+
+      - 找出第一個未被猜到字元的位置（index 從 0 開始）
+      - 若沒有未猜字元或 word 為空，回傳 `"No hints available"`
+      - 回傳格式：`"Position X is 'c'"` （X 從 1 開始計算）
+
+      ### `calculateScore(int totalGuesses, int wrongGuesses, int hintsUsed, int wordLength)`
+
+      ```
+      baseScore    = wordLength * 100
+      wrongPenalty = wrongGuesses * 10
+      hintPenalty  = hintsUsed * 20
+      score        = Math.max(0, baseScore - wrongPenalty - hintPenalty)
+      ```
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP2
+      ```
+
+      ### AI 協作建議
+
+      先向面試官口述每個方法的設計思路，再分別為每個方法向 AI 下 micro-prompt：
+      例如：「幫我實作 getLetterFrequencyHint，用 HashMap 統計字元頻率，
+      過濾 guessed，回傳頻率最高（並列時字母序最前）的字元，找不到時回傳 null」
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP2"
+    aiEnabled: true
+
+  - id: "55555555-5555-5555-5555-555555555513"
+    sequenceNumber: 3
+    title: "Phase 3: Edge Cases — 輸入驗證與防禦"
+    description: |
+      ## Checkpoint 3: Edge Cases（可使用 AI）
+
+      確保你的實作正確處理所有邊界條件：
+
+      ### Game 邊界案例
+
+      1. **單字母 word** — 猜中唯一字母後立即贏得遊戲
+      2. **全相同字母 word（"aaa"）** — 猜中那個字母後揭露全部位置並贏得遊戲
+      3. **大小寫不敏感** — `H` 和 `h` 視為相同猜測，不扣兩次血
+      4. **重複錯誤猜測冪等** — 同樣的錯誤字母猜兩次只扣一次血
+      5. **多個不同錯誤猜測** — 每個不同的錯誤字母各扣一次血
+
+      ### HintProvider 邊界案例
+
+      6. **空字串 word** — `getLetterFrequencyHint("")` 回傳 `null`
+      7. **空字串 word** — `getPositionHint("")` 回傳 `"No hints available"`
+      8. **零長度 word** — `calculateScore(..., 0)` 回傳 `0`
+      9. **全部已猜** — `getLetterFrequencyHint("aaa", {a})` 回傳 `null`
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP3
+      ```
+
+      ### 評分重點
+
+      - 主動向面試官說明你考慮了哪些 edge cases
+      - 審查 AI 產出的程式碼，確認沒有遺漏 null 或空字串處理
+      - 說明你的 `Game` 設計在高並發下是否 thread-safe，為什麼
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP3"
+    aiEnabled: true

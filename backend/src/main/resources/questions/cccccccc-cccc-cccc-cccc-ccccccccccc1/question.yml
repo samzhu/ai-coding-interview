@@ -1,0 +1,143 @@
+id: "cccccccc-cccc-cccc-cccc-ccccccccccc1"
+title: "Java 並發事件匯流排"
+description: |
+  You inherit a topic-based event bus used across multiple threads in a production service.
+
+  The event bus allows components to subscribe handlers to named topics and
+  publish events to all registered subscribers.
+
+  Common AI-generated pitfalls:
+  - Iterating a List without a defensive copy: if a handler calls unsubscribe()
+    during dispatch, ArrayList throws ConcurrentModificationException
+  - Using HashMap (not thread-safe) for concurrent subscribe/publish scenarios
+  - Forgetting to shut down ExecutorService, causing the JVM to hang
+
+  Your tasks across 3 checkpoints:
+  1. Fix the ConcurrentModificationException bug in the publish method
+  2. Implement async publishing, subscriber count, active topics, and graceful shutdown
+  3. Handle edge cases: duplicate subscribers, unsubscribe during dispatch,
+     concurrent access from multiple threads, and shutdown behavior
+difficulty: HARD
+language: java
+type: EXTEND
+level: SENIOR
+
+projectFiles:
+  - filePath: EventBus.java
+    editable: true
+    sortOrder: 1
+  - filePath: TestCP1.java
+    editable: false
+    sortOrder: 2
+  - filePath: TestCP2.java
+    editable: false
+    sortOrder: 3
+  - filePath: TestCP3.java
+    editable: false
+    sortOrder: 4
+
+checkpoints:
+  - id: "cccccccc-cccc-cccc-cccc-cccccccccc11"
+    sequenceNumber: 1
+    title: "Phase 1: Bug Fix — 修復並發修改異常"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `EventBus.java` 的 `publish()` 方法在迭代訂閱者列表時，
+      若有 handler 在回呼中呼叫 `unsubscribe()`（自我取消訂閱），
+      會拋出 `ConcurrentModificationException`。
+
+      這是一個**在程式碼 review 中很難發現**的 bug，
+      因為多數情況下 handler 不會修改訂閱列表，只有特定情境才會觸發。
+
+      ### 根本原因
+
+      ```java
+      for (Consumer<String> handler : handlers) {   // handlers 是 ArrayList
+          handler.accept(event);                    // handler 可能呼叫 unsubscribe()
+          // unsubscribe() → handlers.remove() → 修改了正在迭代的 List → 拋出例外
+      }
+      ```
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP1
+      ```
+
+      ### 任務
+
+      修復 `publish()` 使其在迭代前先複製訂閱者列表（defensive copy），
+      或改用 `CopyOnWriteArrayList`（iteration-safe 的並發 List）。
+
+      ⚠️ **迭代時修改集合是常見的 AI 陷阱**
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP1"
+    aiEnabled: true
+
+  - id: "cccccccc-cccc-cccc-cccc-cccccccccc12"
+    sequenceNumber: 2
+    title: "Phase 2: 實作非同步發布與管理方法"
+    description: |
+      ## Checkpoint 2: Core Implementation（可使用 AI）
+
+      在 `EventBus.java` 中實作 4 個方法：
+
+      ### `subscriberCount(String topic) -> int`
+      回傳指定 topic 目前的訂閱者數量。
+      - 若 topic 不存在，回傳 `0`
+
+      ### `activeTopics() -> Set<String>`
+      回傳目前有至少一個訂閱者的所有 topic 集合。
+
+      ### `publishAsync(String topic, String event)`
+      使用內部 `ExecutorService` 非同步地將事件發布給所有訂閱者。
+      - 呼叫方不需等待 handler 執行完成
+      - 若 bus 已 shutdown，靜默忽略此呼叫
+
+      ### `shutdown(long timeoutMs) throws InterruptedException`
+      優雅關閉事件匯流排：
+      - 停止接受新的非同步任務
+      - 等待已提交的任務執行完畢（最多等 timeoutMs 毫秒）
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP2
+      ```
+
+      ### 重要提示
+
+      ⚠️ **ExecutorService 忘記 shutdown 會導致 JVM 無法結束**，
+      這是比記憶體洩漏更難除錯的問題。
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP2"
+    aiEnabled: true
+
+  - id: "cccccccc-cccc-cccc-cccc-cccccccccc13"
+    sequenceNumber: 3
+    title: "Phase 3: Edge Cases 驗證"
+    description: |
+      ## Checkpoint 3: Edge Cases（可使用 AI）
+
+      確保你的事件匯流排正確處理所有邊界條件：
+
+      1. **重複訂閱**：同一個 handler 訂閱兩次，每次 publish 應收到兩次事件
+      2. **取消訂閱不存在的 handler**：不應拋出例外
+      3. **Publish 無訂閱者的 topic**：不應拋出例外
+      4. **Handler 在 dispatch 中取消自己**：`publish()` 執行完畢後，下次不再收到事件
+      5. **多執行緒並發**：10 個執行緒同時 subscribe + publish，不應有例外或資料遺失
+      6. **Shutdown 後 publishAsync**：靜默忽略，不拋出 RejectedExecutionException
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP3
+      ```
+
+      ### 評分重點
+
+      - 解釋 defensive copy vs CopyOnWriteArrayList 的取捨
+        （前者每次發布都複製，後者每次修改都複製）
+      - 說明為何 HashMap 在多執行緒環境是危險的
+        （結構性修改可能導致無限迴圈或資料遺失）
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP3"
+    aiEnabled: true

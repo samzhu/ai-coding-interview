@@ -1,0 +1,128 @@
+id: "77777777-7777-7777-7777-777777777771"
+title: "Java 折扣計算引擎"
+description: |
+  You inherit a discount calculation engine for an e-commerce platform.
+
+  The engine supports multiple discount types:
+  - PERCENTAGE: e.g. 10% off the item price
+  - BOGO (Buy One Get One): second item is free
+  - FLAT: fixed amount off (e.g. $5 off)
+
+  Common AI-generated pitfalls:
+  - BOGO calculation: applying discount to wrong item count
+  - Monetary rounding: using double instead of BigDecimal for currency
+
+  Your tasks across 3 checkpoints:
+  1. Fix a BOGO calculation bug
+  2. Implement PERCENTAGE and FLAT discount logic
+  3. Handle edge cases: zero quantity, negative prices, stacked discounts
+difficulty: MEDIUM
+language: java
+type: EXTEND
+level: JUNIOR
+
+projectFiles:
+  - filePath: DiscountEngine.java
+    editable: true
+    sortOrder: 1
+  - filePath: DiscountType.java
+    editable: false
+    sortOrder: 2
+  - filePath: TestCP1.java
+    editable: false
+    sortOrder: 3
+  - filePath: TestCP2.java
+    editable: false
+    sortOrder: 4
+  - filePath: TestCP3.java
+    editable: false
+    sortOrder: 5
+
+checkpoints:
+  - id: "77777777-7777-7777-7777-777777777711"
+    sequenceNumber: 1
+    title: "Phase 1: Bug Fix — 修復 BOGO 計算"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `DiscountEngine.java` 的 `calculateBogo()` 方法有一個 **Bug**：
+      BOGO 折扣的計算方式錯誤，導致折扣金額不正確。
+
+      BOGO 規則：每買 2 件，其中 1 件免費。
+      - 3 件 × $10 → 1 件免費 → 折扣 = $10
+      - 4 件 × $10 → 2 件免費 → 折扣 = $20
+      - 5 件 × $10 → 2 件免費 → 折扣 = $20
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP1
+      ```
+
+      ### Bug 提示（只在卡住時看）
+
+      追蹤 `quantity / 2` vs `quantity / 2` (integer division) 的差異。
+      對於奇數數量，免費件數 = `quantity / 2`（整數除法，向下取整）。
+
+      ⚠️ **先口頭說明你的假設，再動手修改**
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP1"
+    aiEnabled: true
+
+  - id: "77777777-7777-7777-7777-777777777712"
+    sequenceNumber: 2
+    title: "Phase 2: 實作 PERCENTAGE 和 FLAT 折扣"
+    description: |
+      ## Checkpoint 2: Core Implementation（可使用 AI）
+
+      在 `DiscountEngine.java` 中實作 2 個方法：
+
+      ### `calculatePercentage(double price, int quantity, double percent) -> double`
+      - 計算百分比折扣後的總金額
+      - 公式：`price * quantity * (1 - percent / 100.0)`
+      - 結果四捨五入到小數點後 2 位
+
+      ### `calculateFlat(double price, int quantity, double flatOff) -> double`
+      - 從每件商品扣除固定金額後的總金額
+      - 每件折扣後的價格不能低於 0
+      - 公式：`Math.max(0, price - flatOff) * quantity`
+      - 結果四捨五入到小數點後 2 位
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP2
+      ```
+
+      ### 重要提示
+
+      ⚠️ **貨幣計算陷阱**：使用 `Math.round(value * 100.0) / 100.0` 或
+      `BigDecimal` 來確保正確的四捨五入，避免浮點誤差。
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP2"
+    aiEnabled: true
+
+  - id: "77777777-7777-7777-7777-777777777713"
+    sequenceNumber: 3
+    title: "Phase 3: Edge Cases 驗證"
+    description: |
+      ## Checkpoint 3: Edge Cases（可使用 AI）
+
+      確保你的實作正確處理所有邊界條件：
+
+      1. **零數量**：quantity=0 時，所有折扣都應回傳 0.0
+      2. **FLAT 超過單價**：flatOff > price 時，每件折扣後不低於 0
+      3. **100% 折扣**：PERCENTAGE 100% → 回傳 0.0
+      4. **BOGO 1 件**：只有 1 件時，沒有免費品 → 全額
+      5. **浮點精度**：0.1 + 0.2 != 0.3，確保使用正確的四捨五入
+
+      ### 執行測試
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP3
+      ```
+
+      ### 評分重點
+
+      - 主動說明你如何處理貨幣精度問題
+      - 解釋為何 Java 的 double 不適合貨幣計算
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP3"
+    aiEnabled: true

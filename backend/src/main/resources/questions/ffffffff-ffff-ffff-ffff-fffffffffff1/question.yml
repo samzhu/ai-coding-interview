@@ -1,0 +1,159 @@
+id: "ffffffff-ffff-ffff-ffff-fffffffffff1"
+title: "Spring Boot 訂單狀態機"
+description: |
+  You take over an e-commerce order processing system. Orders have a defined state flow:
+  CREATED -> CONFIRMED -> SHIPPED -> DELIVERED, and can be cancelled from any non-DELIVERED state.
+
+  The system uses an Event pattern to notify downstream services.
+  Currently the state transition logic has bugs, and event publishing is not yet implemented.
+
+  Your tasks across 4 checkpoints:
+  1. Fix state transition bugs (CANCELLED path + idempotent check)
+  2. Implement confirmOrder() with inventory reservation + event publishing
+  3. Implement cancelOrder() with compensation logic (best-effort release)
+  4. Add optimistic locking for concurrent order processing
+difficulty: HARD
+language: java
+type: EXTEND
+level: SENIOR
+
+projectFiles:
+  - filePath: Order.java
+    editable: true
+    sortOrder: 1
+  - filePath: OrderStatus.java
+    editable: false
+    sortOrder: 2
+  - filePath: OrderService.java
+    editable: true
+    sortOrder: 3
+  - filePath: EventPublisher.java
+    editable: false
+    sortOrder: 4
+  - filePath: OrderEvent.java
+    editable: false
+    sortOrder: 5
+  - filePath: InventoryService.java
+    editable: false
+    sortOrder: 6
+  - filePath: OrderRepository.java
+    editable: false
+    sortOrder: 7
+  - filePath: TestCP1.java
+    editable: false
+    sortOrder: 8
+  - filePath: TestCP2.java
+    editable: false
+    sortOrder: 9
+  - filePath: TestCP3.java
+    editable: false
+    sortOrder: 10
+  - filePath: TestCP4.java
+    editable: false
+    sortOrder: 11
+
+checkpoints:
+  - id: "ffffffff-ffff-ffff-ffff-ffffffffff11"
+    sequenceNumber: 1
+    title: "Bug Fix — 狀態轉換邏輯錯誤"
+    description: |
+      ## Checkpoint 1: Bug Fix
+
+      `Order.transition(OrderStatus target)` has **2 bugs**:
+
+      1. **Missing CANCELLED transitions**: CREATED and CONFIRMED should both allow transition to CANCELLED, but `canTransitionTo()` only allows linear flow (CREATED->CONFIRMED->SHIPPED->DELIVERED).
+      2. **No idempotent check**: `transition(CONFIRMED)` when already CONFIRMED should be a no-op (not throw an exception).
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP1
+      ```
+
+      ### Scoring Focus
+
+      Understanding state machine design and idempotent operations.
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP1"
+    aiEnabled: false
+
+  - id: "ffffffff-ffff-ffff-ffff-ffffffffff12"
+    sequenceNumber: 2
+    title: "Implement confirmOrder() — 庫存預留 + 事件發布"
+    description: |
+      ## Checkpoint 2: Implement confirmOrder()
+
+      Implement `OrderService.confirmOrder(String orderId)`:
+
+      1. Find the order (throw `OrderNotFoundException` if not found)
+      2. Reserve inventory: `inventoryService.reserve(order.getItems())`
+         - May throw `InsufficientStockException`
+      3. If reservation succeeds: transition to CONFIRMED, save, publish `OrderConfirmedEvent`
+      4. If reservation fails: do NOT change the order state, rethrow the exception
+
+      ### Important
+
+      The correct order of operations matters:
+      - Reserve inventory FIRST, then transition state
+      - If inventory reservation fails, the order should remain in CREATED state
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP2
+      ```
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP2"
+    aiEnabled: true
+
+  - id: "ffffffff-ffff-ffff-ffff-ffffffffff13"
+    sequenceNumber: 3
+    title: "Implement cancelOrder() — 補償邏輯"
+    description: |
+      ## Checkpoint 3: Implement cancelOrder()
+
+      Implement `OrderService.cancelOrder(String orderId)`:
+
+      1. Find the order (throw `OrderNotFoundException` if not found)
+      2. If status is CONFIRMED or SHIPPED: call `inventoryService.release(order.getItems())`
+         - If status is CREATED: skip release (inventory not yet reserved)
+      3. Transition to CANCELLED
+      4. Save and publish `OrderCancelledEvent`
+      5. If `release()` throws an exception: still cancel the order (best-effort release),
+         but set `releaseFailure=true` on the event
+
+      ### Key Design Decision
+
+      The release operation is best-effort. A failed release should NOT prevent cancellation.
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP3
+      ```
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP3"
+    aiEnabled: true
+
+  - id: "ffffffff-ffff-ffff-ffff-ffffffffff14"
+    sequenceNumber: 4
+    title: "Concurrent — 樂觀鎖處理"
+    description: |
+      ## Checkpoint 4: Optimistic Locking
+
+      Ensure `confirmOrder()` is safe under concurrent access:
+
+      1. `Order` has a `version` field. `transition()` should increment the version.
+      2. `OrderService` methods should check the version before saving.
+      3. If the version has changed (concurrent modification), throw `OptimisticLockException`.
+      4. Two threads confirming the same order: one succeeds, one gets `OptimisticLockException`.
+
+      ### Implementation
+
+      - `Order.transition()` should call `checkAndIncrementVersion()` before state change
+      - `OrderRepository.save()` already compares versions — you need to use it correctly
+
+      ### Run Tests
+
+      ```
+      cd /tmp/workspace && javac *.java && java TestCP4
+      ```
+    testCommand: "cd /tmp/workspace && javac *.java && java TestCP4"
+    aiEnabled: true
