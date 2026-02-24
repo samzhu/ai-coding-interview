@@ -17,7 +17,7 @@ public interface CheckpointResultRepository extends ListCrudRepository<Checkpoin
     @Query("SELECT * FROM interview_checkpoint_results WHERE interview_id = :interviewId AND checkpoint_id = :checkpointId")
     Optional<CheckpointResult> findByInterviewIdAndCheckpointId(
             @Param("interviewId") UUID interviewId,
-            @Param("checkpointId") UUID checkpointId);
+            @Param("checkpointId") String checkpointId);
 
     @Query("SELECT * FROM interview_checkpoint_results WHERE interview_id = :interviewId AND status != 'PASSED' ORDER BY checkpoint_sequence ASC LIMIT 1")
     Optional<CheckpointResult> findCurrentCheckpoint(@Param("interviewId") UUID interviewId);

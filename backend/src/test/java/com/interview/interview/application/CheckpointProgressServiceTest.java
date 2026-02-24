@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 @DisplayName("CheckpointProgressService 超時檢查")
 class CheckpointProgressServiceTest {
 
-    private static final UUID QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String QUESTION_ID = "question1";
 
     @Mock
     private InterviewRepository interviewRepository;
@@ -61,7 +61,7 @@ class CheckpointProgressServiceTest {
                 UUID.randomUUID(), UUID.randomUUID(), "Test", Instant.now().plusSeconds(3600), QUESTION_ID, null, 1);
         inProgress.start();
         UUID interviewId = inProgress.getId();
-        UUID checkpointId = UUID.randomUUID();
+        String checkpointId = "1";
 
         when(interviewRepository.findById(interviewId)).thenReturn(Optional.of(inProgress));
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
@@ -80,7 +80,7 @@ class CheckpointProgressServiceTest {
                 UUID.randomUUID(), UUID.randomUUID(), "Test", Instant.now().plusSeconds(3600), QUESTION_ID, null, 1);
         inProgress.start();
         UUID interviewId = inProgress.getId();
-        UUID checkpointId = UUID.randomUUID();
+        String checkpointId = "1";
 
         when(interviewRepository.findById(interviewId)).thenReturn(Optional.of(inProgress));
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);

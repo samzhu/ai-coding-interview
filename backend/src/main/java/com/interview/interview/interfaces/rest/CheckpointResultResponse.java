@@ -5,10 +5,9 @@ import com.interview.interview.application.CheckpointProgressService.CheckpointV
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 public record CheckpointResultResponse(
-        UUID checkpointId,
+        String checkpointId,
         int sequenceNumber,
         String title,
         String description,
@@ -18,8 +17,7 @@ public record CheckpointResultResponse(
         String status,
         String submittedCode,
         String executionOutput,
-        Instant passedAt,
-        boolean aiEnabled) {
+        Instant passedAt) {
 
     public record ProjectFileResponse(String filePath, String content, boolean editable) {
         static ProjectFileResponse from(ProjectFileView view) {
@@ -42,7 +40,6 @@ public record CheckpointResultResponse(
                 view.status(),
                 view.submittedCode(),
                 view.executionOutput(),
-                view.passedAt(),
-                view.aiEnabled());
+                view.passedAt());
     }
 }

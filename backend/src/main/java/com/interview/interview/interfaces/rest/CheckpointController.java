@@ -24,7 +24,7 @@ class CheckpointController {
 
     @PostMapping("/{checkpointId}/submit")
     CheckpointResultResponse submitCode(@PathVariable UUID interviewId,
-                                        @PathVariable UUID checkpointId,
+                                        @PathVariable String checkpointId,
                                         @RequestBody SubmitCodeRequest request) {
         SubmitCodeCommand command;
         if (request.files() != null && !request.files().isEmpty()) {
@@ -38,7 +38,7 @@ class CheckpointController {
 
     @PostMapping("/{checkpointId}/run")
     CheckpointResultResponse runTests(@PathVariable UUID interviewId,
-                                      @PathVariable UUID checkpointId,
+                                      @PathVariable String checkpointId,
                                       @RequestBody(required = false) RunTestsRequest request) {
         Map<String, String> files = request != null ? request.files() : null;
         return CheckpointResultResponse.from(progressService.runTests(interviewId, checkpointId, files));

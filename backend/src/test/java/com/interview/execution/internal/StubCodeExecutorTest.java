@@ -32,7 +32,8 @@ class StubCodeExecutorTest {
         var request = new ProjectExecutionRequest(
                 Map.of("main.py", "print('hello')"),
                 "python main.py",
-                30);
+                30,
+                null);
         var result = executor.executeProject(request);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);

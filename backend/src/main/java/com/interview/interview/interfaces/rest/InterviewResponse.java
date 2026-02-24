@@ -11,7 +11,7 @@ public record InterviewResponse(
         UUID interviewerId,
         String title,
         String status,
-        UUID questionId,
+        String questionId,
         String aiModel,
         int durationMinutes,
         Instant scheduledAt,

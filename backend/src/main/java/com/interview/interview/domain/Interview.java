@@ -46,7 +46,7 @@ public class Interview {
     private Instant updatedAt;
 
     @Column("question_id")
-    private UUID questionId;
+    private String questionId;
 
     @Column("ai_model")
     private String aiModel;
@@ -58,11 +58,11 @@ public class Interview {
     protected Interview() {
     }
 
-    public static Interview schedule(UUID candidateId, UUID interviewerId, String title, Instant scheduledAt, UUID questionId, String aiModel) {
+    public static Interview schedule(UUID candidateId, UUID interviewerId, String title, Instant scheduledAt, String questionId, String aiModel) {
         return schedule(candidateId, interviewerId, title, scheduledAt, questionId, aiModel, null);
     }
 
-    public static Interview schedule(UUID candidateId, UUID interviewerId, String title, Instant scheduledAt, UUID questionId, String aiModel, Integer durationMinutes) {
+    public static Interview schedule(UUID candidateId, UUID interviewerId, String title, Instant scheduledAt, String questionId, String aiModel, Integer durationMinutes) {
         Objects.requireNonNull(candidateId, "candidateId must not be null");
         Objects.requireNonNull(interviewerId, "interviewerId must not be null");
         if (title == null || title.isBlank()) {
@@ -129,7 +129,7 @@ public class Interview {
     public Instant getCompletedAt() { return completedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
-    public UUID getQuestionId() { return questionId; }
+    public String getQuestionId() { return questionId; }
     public String getAiModel() { return aiModel; }
     public int getDurationMinutes() { return durationMinutes; }
 }

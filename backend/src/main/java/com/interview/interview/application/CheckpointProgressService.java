@@ -115,7 +115,7 @@ public class CheckpointProgressService {
         return new CheckpointView(result, checkpoint, question.projectFiles());
     }
 
-    public CheckpointView runTests(UUID interviewId, UUID checkpointId, Map<String, String> files) {
+    public CheckpointView runTests(UUID interviewId, String checkpointId, Map<String, String> files) {
         var interview = interviewRepository.findById(interviewId)
                 .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + interviewId));
 
@@ -133,7 +133,7 @@ public class CheckpointProgressService {
         String output;
         if (checkpoint.testCommand() != null) {
             Map<String, String> allFiles = mergeFiles(question.projectFiles(), files != null ? files : Map.of());
-            var execRequest = new ProjectExecutionRequest(allFiles, checkpoint.testCommand(), 30);
+            var execRequest = new ProjectExecutionRequest(allFiles, checkpoint.testCommand(), 30, question.image());
             var execResult = codeExecutionService.executeProject(execRequest);
             output = formatProjectOutput(execResult.stdout(), execResult.stderr(), execResult.exitCode());
         } else {
@@ -153,8 +153,7 @@ public class CheckpointProgressService {
                 result.getStatus(),
                 result.getSubmittedCode(),
                 output,
-                result.getPassedAt(),
-                checkpoint.aiEnabled());
+                result.getPassedAt());
     }
 
     private void executeProjectMode(CheckpointResult result, QuestionDetail question,
@@ -164,7 +163,7 @@ public class CheckpointProgressService {
         checkpointResultRepository.save(result);
 
         Map<String, String> allFiles = mergeFiles(question.projectFiles(), submittedFiles);
-        var execRequest = new ProjectExecutionRequest(allFiles, checkpoint.testCommand(), 30);
+        var execRequest = new ProjectExecutionRequest(allFiles, checkpoint.testCommand(), 30, question.image());
         var execResult = codeExecutionService.executeProject(execRequest);
 
         String output = formatProjectOutput(execResult.stdout(), execResult.stderr(), execResult.exitCode());
@@ -192,7 +191,7 @@ public class CheckpointProgressService {
         }
     }
 
-    private CheckpointDetail findCheckpoint(QuestionDetail question, UUID checkpointId) {
+    private CheckpointDetail findCheckpoint(QuestionDetail question, String checkpointId) {
         return question.checkpoints().stream()
                 .filter(cp -> cp.id().equals(checkpointId))
                 .findFirst()
@@ -284,7 +283,7 @@ public class CheckpointProgressService {
     }
 
     public record CheckpointView(
-            UUID checkpointId,
+            String checkpointId,
             int sequenceNumber,
             String title,
             String description,
@@ -294,8 +293,7 @@ public class CheckpointProgressService {
             String status,
             String submittedCode,
             String executionOutput,
-            Instant passedAt,
-            boolean aiEnabled) {
+            Instant passedAt) {
 
         public record ProjectFileView(String filePath, String content, boolean editable) {
         }
@@ -314,8 +312,7 @@ public class CheckpointProgressService {
                     result.getStatus(),
                     result.getSubmittedCode(),
                     result.getExecutionOutput(),
-                    result.getPassedAt(),
-                    checkpoint.aiEnabled());
+                    result.getPassedAt());
         }
     }
 }

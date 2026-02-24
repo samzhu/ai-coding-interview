@@ -129,7 +129,8 @@ class DockerCodeExecutor implements CodeExecutor {
                     .withCpuCount(1L)
                     .withTmpFs(Map.of("/tmp", "rw,nosuid,size=128m"));
 
-            var container = dockerClient.createContainerCmd(dockerImage)
+            String image = request.dockerImage() != null ? request.dockerImage() : this.dockerImage;
+            var container = dockerClient.createContainerCmd(image)
                     .withCmd("bash", "-c", runCmd)
                     .withHostConfig(hostConfig)
                     .exec();

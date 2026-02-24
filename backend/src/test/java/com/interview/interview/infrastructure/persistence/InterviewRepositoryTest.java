@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("InterviewRepository 整合測試")
 class InterviewRepositoryTest {
 
-    private static final UUID QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String QUESTION_ID = "question1";
 
     @Autowired
     private InterviewRepository repository;

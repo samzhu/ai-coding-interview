@@ -21,7 +21,7 @@ public record CreateInterviewRequest(
         Instant scheduledAt,
 
         @NotNull(message = "questionId is required")
-        UUID questionId,
+        String questionId,
 
         @Nullable
         String aiModel,

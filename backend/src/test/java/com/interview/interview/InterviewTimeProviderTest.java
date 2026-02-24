@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 @DisplayName("InterviewTimeProvider 超時查詢")
 class InterviewTimeProviderTest {
 
-    private static final UUID QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String QUESTION_ID = "question1";
 
     @Mock
     private InterviewRepository repository;

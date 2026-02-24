@@ -6,22 +6,22 @@ import com.interview.interview.application.InterviewService;
 import com.interview.interview.application.SubmitCodeCommand;
 import com.interview.interview.domain.Interview;
 import com.interview.interview.infrastructure.persistence.InterviewRepository;
+import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class CheckpointProgressStepDefinitions {
 
-    private static final UUID TWO_SUM_QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID FIZZBUZZ_QUESTION_ID = UUID.fromString("22222222-2222-2222-2222-222222222221");
-    private static final UUID TWO_SUM_CHECKPOINT_1_ID = UUID.fromString("11111111-1111-1111-1111-111111111112");
-    private static final UUID FIZZBUZZ_CHECKPOINT_1_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
+    private static final String QUESTION_ID = "question1";
+    private static final String[] CHECKPOINT_IDS = {"1", "2", "3", "4"};
 
     @Autowired
     private InterviewService interviewService;
@@ -35,21 +35,16 @@ public class CheckpointProgressStepDefinitions {
     @Autowired
     private SharedInterviewState sharedState;
 
-    @Given("an in-progress interview with the Two Sum question")
-    public void anInProgressInterviewWithTheTwoSumQuestion() {
-        var command = new CreateInterviewCommand(
-                UUID.randomUUID(), UUID.randomUUID(),
-                "Two Sum BDD Test", Instant.now().plusSeconds(3600), TWO_SUM_QUESTION_ID, null, null);
-        Interview interview = interviewService.createInterview(command);
-        interview = interviewService.startInterview(interview.getId());
-        sharedState.setCurrentInterview(interview);
+    @Before
+    public void resetExecutor() {
+        TestCodeExecutorConfig.ControllableCodeExecutor.reset();
     }
 
-    @Given("an in-progress interview with the FizzBuzz question")
-    public void anInProgressInterviewWithTheFizzBuzzQuestion() {
+    @Given("an in-progress interview with the Hangman question")
+    public void anInProgressInterviewWithTheHangmanQuestion() {
         var command = new CreateInterviewCommand(
                 UUID.randomUUID(), UUID.randomUUID(),
-                "FizzBuzz BDD Test", Instant.now().plusSeconds(3600), FIZZBUZZ_QUESTION_ID, null, null);
+                "Hangman BDD Test", Instant.now().plusSeconds(3600), QUESTION_ID, null, null);
         Interview interview = interviewService.createInterview(command);
         interview = interviewService.startInterview(interview.getId());
         sharedState.setCurrentInterview(interview);
@@ -67,74 +62,38 @@ public class CheckpointProgressStepDefinitions {
         assertThat(sharedState.getCurrentCheckpointView().title()).isEqualTo(expectedTitle);
     }
 
-    @When("I submit correct Two Sum code for checkpoint 1")
-    public void iSubmitCorrectTwoSumCodeForCheckpoint1() {
-        String correctCode = """
-                import java.util.*;
-                public class Solution {
-                    public static void main(String[] args) {
-                        Scanner sc = new Scanner(System.in);
-                        int n = sc.nextInt();
-                        int[] nums = new int[n];
-                        for (int i = 0; i < n; i++) nums[i] = sc.nextInt();
-                        int target = sc.nextInt();
-                        Map<Integer, Integer> map = new HashMap<>();
-                        for (int i = 0; i < n; i++) {
-                            int complement = target - nums[i];
-                            if (map.containsKey(complement)) {
-                                System.out.println(map.get(complement) + " " + i);
-                                return;
-                            }
-                            map.put(nums[i], i);
-                        }
-                    }
-                }
-                """;
-        var command = SubmitCodeCommand.singleFile(
+    @When("I submit correct code for checkpoint 1")
+    public void iSubmitCorrectCodeForCheckpoint1() {
+        TestCodeExecutorConfig.ControllableCodeExecutor.forcePass();
+        var command = SubmitCodeCommand.multiFile(
                 sharedState.getCurrentInterview().getId(),
-                TWO_SUM_CHECKPOINT_1_ID,
-                correctCode);
+                CHECKPOINT_IDS[0],
+                Map.of("Game.java", "// correct implementation"));
         CheckpointView view = checkpointProgressService.submitCode(command);
         sharedState.setCurrentCheckpointView(view);
     }
 
     @When("I submit incorrect code for checkpoint 1")
     public void iSubmitIncorrectCodeForCheckpoint1() {
-        String incorrectCode = """
-                public class Solution {
-                    public static void main(String[] args) {
-                        System.out.println("wrong answer");
-                    }
-                }
-                """;
-        var command = SubmitCodeCommand.singleFile(
+        TestCodeExecutorConfig.ControllableCodeExecutor.forceFail();
+        var command = SubmitCodeCommand.multiFile(
                 sharedState.getCurrentInterview().getId(),
-                TWO_SUM_CHECKPOINT_1_ID,
-                incorrectCode);
+                CHECKPOINT_IDS[0],
+                Map.of("Game.java", "// wrong implementation"));
         CheckpointView view = checkpointProgressService.submitCode(command);
         sharedState.setCurrentCheckpointView(view);
     }
 
-    @When("I submit correct FizzBuzz code for the only checkpoint")
-    public void iSubmitCorrectFizzBuzzCodeForTheOnlyCheckpoint() {
-        String correctCode = """
-                n = int(input())
-                for i in range(1, n + 1):
-                    if i % 15 == 0:
-                        print('FizzBuzz')
-                    elif i % 3 == 0:
-                        print('Fizz')
-                    elif i % 5 == 0:
-                        print('Buzz')
-                    else:
-                        print(i)
-                """;
-        var command = SubmitCodeCommand.singleFile(
-                sharedState.getCurrentInterview().getId(),
-                FIZZBUZZ_CHECKPOINT_1_ID,
-                correctCode);
-        CheckpointView view = checkpointProgressService.submitCode(command);
-        sharedState.setCurrentCheckpointView(view);
+    @When("I submit correct code for all 4 checkpoints")
+    public void iSubmitCorrectCodeForAll4Checkpoints() {
+        TestCodeExecutorConfig.ControllableCodeExecutor.forcePass();
+        for (String checkpointId : CHECKPOINT_IDS) {
+            var command = SubmitCodeCommand.multiFile(
+                    sharedState.getCurrentInterview().getId(),
+                    checkpointId,
+                    Map.of("Game.java", "// correct implementation"));
+            checkpointProgressService.submitCode(command);
+        }
     }
 
     @Then("the interview should be automatically completed")

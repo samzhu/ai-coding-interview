@@ -8,7 +8,7 @@ public record CreateInterviewCommand(
         UUID interviewerId,
         String title,
         Instant scheduledAt,
-        UUID questionId,
+        String questionId,
         String aiModel,
         Integer durationMinutes) {
 }

@@ -46,7 +46,7 @@ class InterviewMonitoringServiceTest {
     @DisplayName("onCodeSubmitted 通過時不拋出例外（無訂閱者情境）")
     void onCodeSubmittedPassedShouldNotThrow() {
         UUID interviewId = UUID.randomUUID();
-        UUID checkpointId = UUID.randomUUID();
+        String checkpointId = "1";
         CodeSubmittedEvent event = new CodeSubmittedEvent(interviewId, checkpointId, 1, true);
 
         // 無訂閱者時 broadcast 應靜默成功
@@ -57,7 +57,7 @@ class InterviewMonitoringServiceTest {
     @DisplayName("onCodeSubmitted 失敗時不拋出例外（無訂閱者情境）")
     void onCodeSubmittedFailedShouldNotThrow() {
         UUID interviewId = UUID.randomUUID();
-        UUID checkpointId = UUID.randomUUID();
+        String checkpointId = "1";
         CodeSubmittedEvent event = new CodeSubmittedEvent(interviewId, checkpointId, 1, false);
 
         service.onCodeSubmitted(event);

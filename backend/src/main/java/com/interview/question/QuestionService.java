@@ -4,7 +4,6 @@ import com.interview.question.application.QuestionQueryService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.UUID;
 
 @Service
 public class QuestionService {
@@ -19,7 +18,7 @@ public class QuestionService {
         return queryService.findAll();
     }
 
-    public QuestionDetail getQuestion(UUID id) {
+    public QuestionDetail getQuestion(String id) {
         return queryService.findById(id);
     }
 }

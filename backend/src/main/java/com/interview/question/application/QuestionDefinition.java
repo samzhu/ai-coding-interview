@@ -13,6 +13,7 @@ public record QuestionDefinition(
         String language,
         String type,
         String level,
+        String image,
         List<ProjectFileDef> projectFiles,
         List<CheckpointDef> checkpoints) {
 
@@ -24,10 +25,8 @@ public record QuestionDefinition(
 
     public record CheckpointDef(
             String id,
-            int sequenceNumber,
             String title,
             String description,
-            String testCommand,
-            boolean aiEnabled) {
+            String testCommand) {
     }
 }

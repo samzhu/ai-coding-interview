@@ -19,3 +19,5 @@ databaseChangeLog:
       file: db/changelog/021-alter-interviews-default-ai-model.sql
   - include:
       file: db/changelog/022-alter-ai-conversations-add-version.sql
+  - include:
+      file: db/changelog/023-alter-question-checkpoint-id-to-varchar.sql

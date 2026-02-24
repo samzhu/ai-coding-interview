@@ -2,10 +2,8 @@ package com.interview.question.interfaces.rest;
 
 import com.interview.question.ProjectFileDetail;
 
-import java.util.UUID;
-
 record ProjectFileResponse(
-        UUID id,
+        String id,
         String filePath,
         String content,
         boolean editable,

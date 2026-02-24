@@ -18,18 +18,18 @@ class QuestionQueryServiceTest {
     void shouldThrowWhenQuestionNotFound() {
         QuestionQueryService service = new QuestionQueryServiceTestHelper(List.of());
 
-        UUID unknownId = UUID.randomUUID();
+        String unknownId = "nonexistent";
 
         assertThatThrownBy(() -> service.findById(unknownId))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining(unknownId.toString());
+                .hasMessageContaining(unknownId);
     }
 
     @Test
     @DisplayName("查詢所有題目應回傳所有載入的題目")
     void shouldReturnAllLoadedQuestions() {
-        UUID id = UUID.randomUUID();
-        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, List.of(), List.of());
+        String id = "question1";
+        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, null, List.of(), List.of());
         QuestionQueryService service = new QuestionQueryServiceTestHelper(List.of(detail));
 
         List<QuestionDetail> result = service.findAll();
@@ -41,8 +41,8 @@ class QuestionQueryServiceTest {
     @Test
     @DisplayName("查詢存在的題目應回傳正確詳情")
     void shouldReturnQuestionWhenFound() {
-        UUID id = UUID.randomUUID();
-        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, List.of(), List.of());
+        String id = "question1";
+        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, null, List.of(), List.of());
         QuestionQueryService service = new QuestionQueryServiceTestHelper(List.of(detail));
 
         QuestionDetail result = service.findById(id);

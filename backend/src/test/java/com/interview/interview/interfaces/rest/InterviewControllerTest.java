@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("InterviewController REST API 測試")
 class InterviewControllerTest {
 
-    private static final UUID QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String QUESTION_ID = "question1";
 
     @Autowired
     private MockMvc mockMvc;

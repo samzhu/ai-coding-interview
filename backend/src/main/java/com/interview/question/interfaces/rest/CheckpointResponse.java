@@ -3,10 +3,9 @@ package com.interview.question.interfaces.rest;
 import com.interview.question.CheckpointDetail;
 
 import java.util.List;
-import java.util.UUID;
 
 record CheckpointResponse(
-        UUID id,
+        String id,
         int sequenceNumber,
         String title,
         String description,

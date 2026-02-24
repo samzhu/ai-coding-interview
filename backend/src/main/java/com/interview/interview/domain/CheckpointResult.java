@@ -21,7 +21,7 @@ public class CheckpointResult {
     private UUID interviewId;
 
     @Column("checkpoint_id")
-    private UUID checkpointId;
+    private String checkpointId;
 
     @Column("checkpoint_sequence")
     private int checkpointSequence;
@@ -46,7 +46,7 @@ public class CheckpointResult {
     protected CheckpointResult() {
     }
 
-    public static CheckpointResult createPending(UUID interviewId, UUID checkpointId, int checkpointSequence) {
+    public static CheckpointResult createPending(UUID interviewId, String checkpointId, int checkpointSequence) {
         CheckpointResult result = new CheckpointResult();
         result.id = UUID.randomUUID();
         result.interviewId = interviewId;
@@ -92,7 +92,7 @@ public class CheckpointResult {
 
     public UUID getId() { return id; }
     public UUID getInterviewId() { return interviewId; }
-    public UUID getCheckpointId() { return checkpointId; }
+    public String getCheckpointId() { return checkpointId; }
     public int getCheckpointSequence() { return checkpointSequence; }
     public String getStatus() { return status; }
     public String getSubmittedCode() { return submittedCode; }

@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class EndToEndStepDefinitions {
 
-    private static final UUID SEED_QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String SEED_QUESTION_ID = "question1";
 
     @Autowired
     private InterviewService interviewService;
@@ -79,13 +79,8 @@ public class EndToEndStepDefinitions {
         sharedState.setCurrentCheckpointView(view);
     }
 
-    @Then("the checkpoint status should be {string}")
-    public void theCheckpointStatusShouldBe(String expectedStatus) {
-        assertThat(sharedState.getCurrentCheckpointView().status()).isEqualTo(expectedStatus);
-    }
-
-    @And("the checkpoint should contain starter code")
-    public void theCheckpointShouldContainStarterCode() {
-        assertThat(sharedState.getCurrentCheckpointView().starterCode()).isNotBlank();
+    @And("the checkpoint should have a description")
+    public void theCheckpointShouldHaveADescription() {
+        assertThat(sharedState.getCurrentCheckpointView().description()).isNotBlank();
     }
 }

@@ -2,10 +2,8 @@ package com.interview.question.interfaces.rest;
 
 import com.interview.question.TestCaseDetail;
 
-import java.util.UUID;
-
 record TestCaseResponse(
-        UUID id,
+        String id,
         String input,
         String expectedOutput) {
 

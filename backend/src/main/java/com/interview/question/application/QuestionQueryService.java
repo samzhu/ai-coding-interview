@@ -17,12 +17,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Service
 public class QuestionQueryService {
 
-    final Map<UUID, QuestionDetail> questions = new LinkedHashMap<>();
+    final Map<String, QuestionDetail> questions = new LinkedHashMap<>();
     private final ResourcePatternResolver resolver;
 
     public QuestionQueryService(ResourcePatternResolver resolver) {
@@ -38,37 +37,43 @@ public class QuestionQueryService {
             String basePath = "questions/" + def.id() + "/";
 
             List<ProjectFileDetail> files = new ArrayList<>();
-            for (QuestionDefinition.ProjectFileDef pf : def.projectFiles()) {
-                String content = loadResource(basePath + pf.filePath());
-                files.add(new ProjectFileDetail(
-                        UUID.randomUUID(),
-                        pf.filePath(),
-                        content,
-                        pf.editable(),
-                        pf.sortOrder()));
+            if (def.projectFiles() != null) {
+                for (QuestionDefinition.ProjectFileDef pf : def.projectFiles()) {
+                    String content = loadResource(basePath + pf.filePath());
+                    files.add(new ProjectFileDetail(
+                            pf.filePath(),
+                            pf.filePath(),
+                            content,
+                            pf.editable(),
+                            pf.sortOrder()));
+                }
             }
 
             List<CheckpointDetail> checkpoints = new ArrayList<>();
-            for (QuestionDefinition.CheckpointDef cp : def.checkpoints()) {
-                checkpoints.add(new CheckpointDetail(
-                        UUID.fromString(cp.id()),
-                        cp.sequenceNumber(),
-                        cp.title(),
-                        cp.description(),
-                        null,
-                        cp.testCommand(),
-                        cp.aiEnabled(),
-                        List.of()));
+            List<QuestionDefinition.CheckpointDef> cpDefs = def.checkpoints();
+            if (cpDefs != null) {
+                for (int i = 0; i < cpDefs.size(); i++) {
+                    QuestionDefinition.CheckpointDef cp = cpDefs.get(i);
+                    checkpoints.add(new CheckpointDetail(
+                            cp.id(),
+                            i + 1,
+                            cp.title(),
+                            cp.description(),
+                            null,
+                            cp.testCommand(),
+                            List.of()));
+                }
             }
 
             QuestionDetail detail = new QuestionDetail(
-                    UUID.fromString(def.id()),
+                    def.id(),
                     def.title(),
                     def.description(),
                     def.difficulty(),
                     def.language(),
                     def.type(),
                     def.level(),
+                    def.image(),
                     files,
                     checkpoints);
 
@@ -87,7 +92,7 @@ public class QuestionQueryService {
         return new ArrayList<>(questions.values());
     }
 
-    public QuestionDetail findById(UUID id) {
+    public QuestionDetail findById(String id) {
         QuestionDetail detail = questions.get(id);
         if (detail == null) {
             throw new IllegalArgumentException("Question not found: " + id);

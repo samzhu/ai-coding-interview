@@ -15,7 +15,7 @@ class InterviewTest {
     private final UUID candidateId = UUID.randomUUID();
     private final UUID interviewerId = UUID.randomUUID();
     private final Instant scheduledAt = Instant.now().plusSeconds(3600);
-    private final UUID questionId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private final String questionId = "question1";
 
     @Test
     @DisplayName("建立面試時狀態為 SCHEDULED")

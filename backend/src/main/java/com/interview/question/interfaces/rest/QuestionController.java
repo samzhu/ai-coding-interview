@@ -4,7 +4,6 @@ import com.interview.question.QuestionService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/questions")
@@ -24,7 +23,7 @@ class QuestionController {
     }
 
     @GetMapping("/{id}")
-    QuestionResponse getQuestion(@PathVariable UUID id) {
+    QuestionResponse getQuestion(@PathVariable String id) {
         return QuestionResponse.from(service.getQuestion(id));
     }
 }

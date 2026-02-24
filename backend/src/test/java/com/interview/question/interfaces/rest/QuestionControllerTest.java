@@ -30,20 +30,20 @@ class QuestionControllerTest {
     @Test
     @DisplayName("GET /api/v1/questions 應回傳題目列表")
     void shouldListQuestions() throws Exception {
-        UUID id = UUID.randomUUID();
-        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, List.of(), List.of());
+        String id = "question1";
+        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, List.of(), List.of());
         when(service.findAllQuestions()).thenReturn(List.of(detail));
 
         mockMvc.perform(get("/api/v1/questions"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(id.toString()))
+                .andExpect(jsonPath("$[0].id").value(id))
                 .andExpect(jsonPath("$[0].title").value("Two Sum"));
     }
 
     @Test
     @DisplayName("GET /api/v1/questions/{id} 不存在時回傳 404")
     void shouldReturn404WhenQuestionNotFound() throws Exception {
-        UUID unknownId = UUID.randomUUID();
+        String unknownId = "nonexistent";
         when(service.getQuestion(unknownId))
                 .thenThrow(new IllegalArgumentException("Question not found: " + unknownId));
 
@@ -54,10 +54,10 @@ class QuestionControllerTest {
     @Test
     @DisplayName("GET /api/v1/questions/{id} 應回傳題目詳情含 checkpoints")
     void shouldGetQuestionWithCheckpoints() throws Exception {
-        UUID id = UUID.fromString("11111111-1111-1111-1111-111111111111");
-        UUID cpId = UUID.randomUUID();
-        var cp = new CheckpointDetail(cpId, 1, "Implement", "desc", "// code", null, true, List.of());
-        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, List.of(), List.of(cp));
+        String id = "question1";
+        String cpId = "1";
+        var cp = new CheckpointDetail(cpId, 1, "Implement", "desc", "// code", null, List.of());
+        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, List.of(), List.of(cp));
         when(service.getQuestion(id)).thenReturn(detail);
 
         mockMvc.perform(get("/api/v1/questions/{id}", id))

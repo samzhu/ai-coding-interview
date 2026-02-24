@@ -33,7 +33,7 @@ import static org.mockito.Mockito.*;
 @DisplayName("InterviewService 業務邏輯")
 class InterviewServiceTest {
 
-    private static final UUID QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String QUESTION_ID = "question1";
 
     @Mock
     private InterviewRepository repository;
@@ -75,8 +75,8 @@ class InterviewServiceTest {
         when(repository.findById(scheduled.getId())).thenReturn(Optional.of(scheduled));
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        var cp = new CheckpointDetail(UUID.randomUUID(), 1, "CP1", "desc", "code", null, true, List.of());
-        var question = new QuestionDetail(QUESTION_ID, "Two Sum", "desc", "EASY", "java", null, null, List.of(), List.of(cp));
+        var cp = new CheckpointDetail("1", 1, "CP1", "desc", "code", null, List.of());
+        var question = new QuestionDetail(QUESTION_ID, "Two Sum", "desc", "EASY", "java", null, null, null, List.of(), List.of(cp));
         when(questionService.getQuestion(QUESTION_ID)).thenReturn(question);
         when(checkpointResultRepository.saveAll(any())).thenReturn(List.of());
 

@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 public class InterviewStepDefinitions {
 
-    private static final UUID SEED_QUESTION_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String SEED_QUESTION_ID = "question1";
 
     @Autowired
     private InterviewService service;
@@ -39,6 +39,7 @@ public class InterviewStepDefinitions {
         capturedEvents.clear();
         sharedState.reset();
         caughtException = null;
+        TestCodeExecutorConfig.ControllableCodeExecutor.reset();
     }
 
     @Given("the system is ready to accept interview requests")

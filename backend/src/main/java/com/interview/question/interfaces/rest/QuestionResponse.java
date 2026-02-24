@@ -3,10 +3,9 @@ package com.interview.question.interfaces.rest;
 import com.interview.question.QuestionDetail;
 
 import java.util.List;
-import java.util.UUID;
 
 public record QuestionResponse(
-        UUID id,
+        String id,
         String title,
         String description,
         String difficulty,

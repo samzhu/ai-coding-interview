@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CheckpointResultTest {
 
     private final UUID interviewId = UUID.randomUUID();
-    private final UUID checkpointId = UUID.randomUUID();
+    private final String checkpointId = "1";
 
     @Test
     @DisplayName("建立 PENDING 狀態的 CheckpointResult")
