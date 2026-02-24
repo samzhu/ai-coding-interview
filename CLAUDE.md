@@ -21,10 +21,13 @@ ai-coding-interview/
 │   ├── gradle/
 │   ├── compose.yaml      # PostgreSQL Docker Compose
 │   └── src/
-└── frontend/             # Next.js 前端
-    ├── package.json
-    ├── next.config.ts
-    └── src/
+└── frontend/             # npm Workspaces Monorepo
+    ├── package.json          # workspace root
+    ├── packages/
+    │   └── shared/           # @interview/shared（型別、API client、UI 元件）
+    └── apps/
+        ├── admin/            # 面試官 App（port 3000）
+        └── candidate/        # 受測者 App（port 3001）
 ```
 
 ## Backend Commands
@@ -55,32 +58,47 @@ cd backend && ./gradlew bootRun
 
 ## Frontend Commands
 
+Frontend is now an npm Workspaces monorepo with two apps:
+- `apps/admin/` — 面試官 App (port 3000)
+- `apps/candidate/` — 受測者 App (port 3001)
+- `packages/shared/` — 共用型別、API client、UI 元件
+
 ```bash
-# Start dev server
-cd frontend && npm run dev
+# Install dependencies (workspace root)
+cd frontend && npm install
+
+# Start dev servers
+cd frontend && npm run dev:admin        # 面試官 App (port 3000)
+cd frontend && npm run dev:candidate    # 受測者 App (port 3001)
 
 # Build for production
-cd frontend && npm run build
+cd frontend && npm run build:admin
+cd frontend && npm run build:candidate
 
-# Run linter
-cd frontend && npm run lint
+# Build static export (for Docker / nginx)
+cd frontend && npm run build:export:admin
+cd frontend && npm run build:export:candidate
 ```
 
 ## E2E Validation
 
 ```bash
-# 1. Start backend
+# Terminal 1: 後端
 cd backend && ./gradlew bootRun
 
-# 2. Start frontend
-cd frontend && npm run dev
+# Terminal 2: 面試官 App (port 3000)
+cd frontend && npm run dev:admin
 
-# 3. Open http://localhost:3000/admin/interviews/new
-# 4. Create interview → copy invitation link
-# 5. Open invitation link in new tab → join interview
-# 6. Write code → Submit → view test results
-# 7. Chat with AI
-# 8. All checkpoints passed → completion page
+# Terminal 3: 受測者 App (port 3001)
+cd frontend && npm run dev:candidate
+
+# 1. Open http://localhost:3000/interviews/new
+# 2. Create interview → copy invitation link (points to http://localhost:3001)
+# 3. Open invitation link in new tab → join interview
+# 4. Write code → Submit → view test results
+# 5. Chat with AI
+# 6. All checkpoints passed → completion page
+# 7. Admin monitor: http://localhost:3000/interviews/{id}/monitor
 ```
 
 ## Backend Architecture

@@ -2,7 +2,7 @@
 .DS_Store
 .AppleDouble
 .LSOverride
-docs
+
 
 # IDE
 .vscode/
@@ -12,6 +12,7 @@ docs
 # Gradle
 .gradle/
 build/
+bin/
 
 # Spring Boot
 HELP.md
@@ -32,4 +33,6 @@ logs/
 node_modules/
 .next/
 out/
+
+docs
 docker-compose.yml
