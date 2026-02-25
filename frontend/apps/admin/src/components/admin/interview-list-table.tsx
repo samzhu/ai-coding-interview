@@ -42,7 +42,7 @@ export function InterviewListTable({ interviews }: InterviewListTableProps) {
       const invitation = await apiPost<{ token: string }>(
         `/interviews/${interviewId}/invitation`
       );
-      const candidateUrl = process.env.NEXT_PUBLIC_CANDIDATE_URL ?? window.location.origin;
+      const candidateUrl = process.env.NEXT_PUBLIC_CANDIDATE_URL || window.location.origin;
       await navigator.clipboard.writeText(`${candidateUrl}/invite/${invitation.token}`);
     } catch {
       // silent fail — user can retry

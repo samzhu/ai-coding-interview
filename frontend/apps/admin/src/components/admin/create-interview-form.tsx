@@ -85,7 +85,7 @@ export function CreateInterviewForm({ questions }: CreateInterviewFormProps) {
         `/interviews/${interview.id}/invitation`
       );
 
-      const candidateUrl = process.env.NEXT_PUBLIC_CANDIDATE_URL ?? window.location.origin;
+      const candidateUrl = process.env.NEXT_PUBLIC_CANDIDATE_URL || window.location.origin;
       setInviteUrl(`${candidateUrl}/invite/${invitation.token}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "建立失敗");

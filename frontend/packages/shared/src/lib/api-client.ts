@@ -1,16 +1,16 @@
 // Client-side API utilities
 // Used by React components and hooks (browser context)
 //
-// NEXT_PUBLIC_API_BASE controls the API host:
-//   - dev (npm run dev):  leave unset → "" → relative path /api/v1/... (Next.js proxy)
-//   - prod (Docker):      set to http://localhost:8080 → absolute path http://localhost:8080/api/v1/...
-//   - Cloud Run:          set to https://my-service.run.app → https://my-service.run.app/api/v1/...
+// NEXT_PUBLIC_API_BASE is injected at build-time via `next build`:
+//   - dev (npm run dev):  unset → "" → relative path /api/v1/... (Next.js proxy)
+//   - prod (Docker):      NEXT_PUBLIC_API_BASE=http://localhost:8080 passed as ARG/ENV at build time
 
-const API_HOST = process.env.NEXT_PUBLIC_API_BASE ?? "";
-const API_BASE = API_HOST + "/api/v1";
+function getApiBase(): string {
+  return (process.env.NEXT_PUBLIC_API_BASE ?? "") + "/api/v1";
+}
 
 export function getApiUrl(path: string): string {
-  return API_BASE + path;
+  return getApiBase() + path;
 }
 
 class ApiError extends Error {
