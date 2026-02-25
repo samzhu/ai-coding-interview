@@ -40,7 +40,7 @@ management:
 
 execution:
   docker:
-    host: ${DOCKER_HOST:tcp://localhost:2375}
+    host: ${DOCKER_HOST:unix:///var/run/docker.sock}
     tls-verify: ${DOCKER_TLS_VERIFY:false}
     cert-path: ${DOCKER_CERT_PATH:}
     image: ${EXECUTION_DOCKER_IMAGE:eclipse-temurin:25-jdk}

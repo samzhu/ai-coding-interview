@@ -7,10 +7,10 @@ ARG NEXT_PUBLIC_CANDIDATE_URL
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 ENV NEXT_PUBLIC_CANDIDATE_URL=${NEXT_PUBLIC_CANDIDATE_URL}
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY packages/shared/ packages/shared/
 COPY apps/admin/ apps/admin/
-RUN npm install --workspace=apps/admin
+RUN npm ci --workspace=apps/admin
 WORKDIR /app/apps/admin
 RUN npm run build:export
 

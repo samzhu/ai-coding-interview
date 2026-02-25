@@ -4,7 +4,6 @@ import com.interview.interview.application.CheckpointProgressService;
 import com.interview.interview.application.SubmitCodeCommand;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -24,23 +23,14 @@ class CheckpointController {
 
     @PostMapping("/{checkpointId}/submit")
     CheckpointResultResponse submitCode(@PathVariable UUID interviewId,
-                                        @PathVariable String checkpointId,
-                                        @RequestBody SubmitCodeRequest request) {
-        SubmitCodeCommand command;
-        if (request.files() != null && !request.files().isEmpty()) {
-            command = SubmitCodeCommand.multiFile(interviewId, checkpointId, request.files());
-        } else {
-            command = SubmitCodeCommand.singleFile(interviewId, checkpointId,
-                    request.code() != null ? request.code() : "");
-        }
-        return CheckpointResultResponse.from(progressService.submitCode(command));
+                                        @PathVariable String checkpointId) {
+        return CheckpointResultResponse.from(
+                progressService.submitCode(new SubmitCodeCommand(interviewId, checkpointId)));
     }
 
     @PostMapping("/{checkpointId}/run")
     CheckpointResultResponse runTests(@PathVariable UUID interviewId,
-                                      @PathVariable String checkpointId,
-                                      @RequestBody(required = false) RunTestsRequest request) {
-        Map<String, String> files = request != null ? request.files() : null;
-        return CheckpointResultResponse.from(progressService.runTests(interviewId, checkpointId, files));
+                                      @PathVariable String checkpointId) {
+        return CheckpointResultResponse.from(progressService.runTests(interviewId, checkpointId));
     }
 }

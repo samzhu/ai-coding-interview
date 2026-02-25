@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@interview/shared/components/ui/badge";
 import { useInterview } from "@/contexts/interview-context";
 import { cn } from "@interview/shared/lib/utils";
 
@@ -29,14 +28,6 @@ export function FileTabs() {
             title={file.filePath}
           >
             <span>{fileName}</span>
-            {!file.editable && (
-              <Badge
-                variant="outline"
-                className="text-[9px] px-1 py-0 h-3.5 text-zinc-500 border-zinc-600"
-              >
-                readonly
-              </Badge>
-            )}
           </button>
         );
       })}

@@ -24,16 +24,5 @@ services:
       retries: 10
       start_period: 10s
 
-  dind-init:
-    image: docker:27-cli
-    environment:
-      DOCKER_HOST: tcp://dind:2375
-    depends_on:
-      dind:
-        condition: service_healthy
-    command: >
-      sh -c "docker pull eclipse-temurin:25-jdk && echo 'Execution image ready'"
-    restart: "no"
-
 volumes:
   dind-storage:

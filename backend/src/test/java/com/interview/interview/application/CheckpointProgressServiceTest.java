@@ -1,13 +1,11 @@
 package com.interview.interview.application;
 
+import com.interview.execution.ContainerService;
 import com.interview.interview.InterviewExpiredException;
 import com.interview.interview.InterviewTimeProvider;
-import com.interview.interview.domain.CheckpointResult;
 import com.interview.interview.domain.Interview;
-import com.interview.interview.domain.InterviewStatus;
 import com.interview.interview.infrastructure.persistence.CheckpointResultRepository;
 import com.interview.interview.infrastructure.persistence.InterviewRepository;
-import com.interview.execution.CodeExecutionService;
 import com.interview.question.QuestionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,7 +38,7 @@ class CheckpointProgressServiceTest {
     private QuestionService questionService;
 
     @Mock
-    private CodeExecutionService codeExecutionService;
+    private ContainerService containerService;
 
     @Mock
     private InterviewService interviewService;
@@ -66,7 +64,7 @@ class CheckpointProgressServiceTest {
         when(interviewRepository.findById(interviewId)).thenReturn(Optional.of(inProgress));
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
 
-        var command = SubmitCodeCommand.singleFile(interviewId, checkpointId, "print('hello')");
+        var command = new SubmitCodeCommand(interviewId, checkpointId);
 
         assertThatThrownBy(() -> service.submitCode(command))
                 .isInstanceOf(InterviewExpiredException.class)
@@ -85,7 +83,7 @@ class CheckpointProgressServiceTest {
         when(interviewRepository.findById(interviewId)).thenReturn(Optional.of(inProgress));
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.runTests(interviewId, checkpointId, null))
+        assertThatThrownBy(() -> service.runTests(interviewId, checkpointId))
                 .isInstanceOf(InterviewExpiredException.class)
                 .hasMessageContaining("時間已到");
     }

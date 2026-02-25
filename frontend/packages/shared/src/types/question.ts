@@ -1,13 +1,5 @@
 // Question module types — mirrors backend QuestionResponse
 
-export interface ProjectFileResponse {
-  id: string;
-  filePath: string;
-  content: string;
-  editable: boolean;
-  sortOrder: number;
-}
-
 export interface TestCaseResponse {
   id: string;
   input: string;
@@ -32,6 +24,6 @@ export interface QuestionResponse {
   language: string;
   type: string | null;
   level: string | null;
-  projectFiles: ProjectFileResponse[];
+  workspace: string | null;
   checkpoints: CheckpointResponse[];
 }

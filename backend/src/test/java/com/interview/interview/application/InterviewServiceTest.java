@@ -1,5 +1,6 @@
 package com.interview.interview.application;
 
+import com.interview.execution.ContainerService;
 import com.interview.interview.InterviewCompletedEvent;
 import com.interview.interview.InterviewStartedEvent;
 import com.interview.interview.domain.CheckpointResult;
@@ -47,6 +48,9 @@ class InterviewServiceTest {
     @Mock
     private QuestionService questionService;
 
+    @Mock
+    private ContainerService containerService;
+
     @InjectMocks
     private InterviewService service;
 
@@ -76,7 +80,7 @@ class InterviewServiceTest {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var cp = new CheckpointDetail("1", 1, "CP1", "desc", "code", null, List.of());
-        var question = new QuestionDetail(QUESTION_ID, "Two Sum", "desc", "EASY", "java", null, null, null, List.of(), List.of(cp));
+        var question = new QuestionDetail(QUESTION_ID, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(cp));
         when(questionService.getQuestion(QUESTION_ID)).thenReturn(question);
         when(checkpointResultRepository.saveAll(any())).thenReturn(List.of());
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { InterviewProvider } from "@/contexts/interview-context";
-import { InterviewHeader } from "@/components/interview/interview-header";
 import { InterviewWorkspace } from "@/components/interview/interview-workspace";
 import { useRouteParam } from "@interview/shared/hooks/use-route-param";
 import { apiGet, apiPost } from "@interview/shared/lib/api-client";
@@ -11,6 +10,9 @@ import type {
   InterviewStatus,
   CheckpointResultResponse,
   QuestionResponse,
+  WorkspaceFileEntry,
+  FileContentResponse,
+  CheckpointFileState,
 } from "@interview/shared/types";
 
 export function InterviewClient() {
@@ -18,7 +20,7 @@ export function InterviewClient() {
 
   const [status, setStatus] = useState<InterviewStatus>("IN_PROGRESS");
   const [checkpoint, setCheckpoint] = useState<CheckpointResultResponse | null>(null);
-  const [language, setLanguage] = useState<string>("python");
+  const [initialFiles, setInitialFiles] = useState<Map<string, CheckpointFileState>>(new Map());
   const [totalCheckpoints, setTotalCheckpoints] = useState<number>(1);
   const [title, setTitle] = useState<string>("面試進行中");
   const [loading, setLoading] = useState(true);
@@ -61,17 +63,38 @@ export function InterviewClient() {
         setStatus((interview?.status ?? "IN_PROGRESS") as InterviewStatus);
         setTitle(interview?.title ?? "面試進行中");
 
-        // Fetch question for language and total checkpoints
+        // Fetch question for total checkpoints count
         if (interview?.questionId) {
           try {
             const q = await apiGet<QuestionResponse>(
               `/questions/${interview.questionId}`
             );
-            setLanguage(q.language ?? "python");
             setTotalCheckpoints(q.checkpoints?.length ?? 1);
           } catch {
             // use defaults
           }
+        }
+
+        // Fetch initial workspace files from container
+        try {
+          const entries = await apiGet<WorkspaceFileEntry[]>(
+            `/interviews/${id}/files`
+          );
+          const fileEntries = entries.filter((e) => !e.isDirectory);
+          const contents = await Promise.all(
+            fileEntries.map((e) =>
+              apiGet<FileContentResponse>(
+                `/interviews/${id}/files/content?path=${encodeURIComponent(e.filePath)}`
+              )
+            )
+          );
+          const fileMap = new Map<string, CheckpointFileState>();
+          for (const fc of contents) {
+            fileMap.set(fc.filePath, { filePath: fc.filePath, content: fc.content });
+          }
+          setInitialFiles(fileMap);
+        } catch {
+          // Container might not be running yet; workspace will show empty
         }
       } finally {
         setLoading(false);
@@ -102,12 +125,14 @@ export function InterviewClient() {
       interviewId={id}
       initialStatus={status}
       initialCheckpoint={checkpoint}
+      initialFiles={initialFiles}
     >
-      <div className="flex flex-col h-screen bg-background overflow-hidden">
-        <InterviewHeader title={title} totalCheckpoints={totalCheckpoints} />
-        <div className="flex-1 overflow-hidden">
-          <InterviewWorkspace interviewId={id} language={language} />
-        </div>
+      <div className="h-screen overflow-hidden">
+        <InterviewWorkspace
+          interviewId={id}
+          title={title}
+          totalCheckpoints={totalCheckpoints}
+        />
       </div>
     </InterviewProvider>
   );

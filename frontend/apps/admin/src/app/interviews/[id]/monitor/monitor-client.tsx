@@ -52,10 +52,6 @@ export function MonitorClient() {
 
         if (checkpointData) {
           setCurrentCode(checkpointData.submittedCode || checkpointData.starterCode || "");
-          if (checkpointData.projectFiles?.length > 0) {
-            const editableFile = checkpointData.projectFiles.find((f) => f.editable);
-            setCurrentFilePath(editableFile?.filePath);
-          }
         }
 
         if (historyData?.messages) {

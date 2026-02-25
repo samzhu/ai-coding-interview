@@ -13,7 +13,6 @@ import io.cucumber.java.en.When;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +37,7 @@ public class CheckpointProgressStepDefinitions {
     @Before
     public void resetExecutor() {
         TestCodeExecutorConfig.ControllableCodeExecutor.reset();
+        TestCodeExecutorConfig.TestContainerManager.reset();
     }
 
     @Given("an in-progress interview with the Hangman question")
@@ -64,34 +64,31 @@ public class CheckpointProgressStepDefinitions {
 
     @When("I submit correct code for checkpoint 1")
     public void iSubmitCorrectCodeForCheckpoint1() {
-        TestCodeExecutorConfig.ControllableCodeExecutor.forcePass();
-        var command = SubmitCodeCommand.multiFile(
+        TestCodeExecutorConfig.TestContainerManager.forcePass();
+        var command = new SubmitCodeCommand(
                 sharedState.getCurrentInterview().getId(),
-                CHECKPOINT_IDS[0],
-                Map.of("Game.java", "// correct implementation"));
+                CHECKPOINT_IDS[0]);
         CheckpointView view = checkpointProgressService.submitCode(command);
         sharedState.setCurrentCheckpointView(view);
     }
 
     @When("I submit incorrect code for checkpoint 1")
     public void iSubmitIncorrectCodeForCheckpoint1() {
-        TestCodeExecutorConfig.ControllableCodeExecutor.forceFail();
-        var command = SubmitCodeCommand.multiFile(
+        TestCodeExecutorConfig.TestContainerManager.forceFail();
+        var command = new SubmitCodeCommand(
                 sharedState.getCurrentInterview().getId(),
-                CHECKPOINT_IDS[0],
-                Map.of("Game.java", "// wrong implementation"));
+                CHECKPOINT_IDS[0]);
         CheckpointView view = checkpointProgressService.submitCode(command);
         sharedState.setCurrentCheckpointView(view);
     }
 
     @When("I submit correct code for all 4 checkpoints")
     public void iSubmitCorrectCodeForAll4Checkpoints() {
-        TestCodeExecutorConfig.ControllableCodeExecutor.forcePass();
+        TestCodeExecutorConfig.TestContainerManager.forcePass();
         for (String checkpointId : CHECKPOINT_IDS) {
-            var command = SubmitCodeCommand.multiFile(
+            var command = new SubmitCodeCommand(
                     sharedState.getCurrentInterview().getId(),
-                    checkpointId,
-                    Map.of("Game.java", "// correct implementation"));
+                    checkpointId);
             checkpointProgressService.submitCode(command);
         }
     }

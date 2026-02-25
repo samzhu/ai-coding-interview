@@ -19,10 +19,8 @@ interface InterviewState {
   status: InterviewStatus;
   checkpoint: CheckpointResultResponse | null;
   aiEnabled: boolean;
-  // Multi-file state
   files: Map<string, CheckpointFileState>;
   activeFilePath: string | null;
-  // Legacy single-file (kept for backward compat)
   code: string;
   isSubmitting: boolean;
   isRunning: boolean;
@@ -38,54 +36,36 @@ type InterviewAction =
   | { type: "SET_RUNNING"; payload: boolean }
   | { type: "SET_EXECUTION"; payload: ExecutionResponse }
   | { type: "SET_STATUS"; payload: InterviewStatus }
+  | { type: "LOAD_FILES"; payload: Map<string, CheckpointFileState> }
   | {
       type: "CHECKPOINT_RESULT";
       payload: { result: CheckpointResultResponse; execution: ExecutionResponse | null };
     };
 
-function buildFileMap(
-  checkpoint: CheckpointResultResponse
-): Map<string, CheckpointFileState> {
-  const map = new Map<string, CheckpointFileState>();
-  if (checkpoint.projectFiles && checkpoint.projectFiles.length > 0) {
-    for (const f of checkpoint.projectFiles) {
-      map.set(f.filePath, {
-        filePath: f.filePath,
-        content: f.content,
-        editable: f.editable,
-        originalContent: f.content,
-      });
-    }
-  }
-  return map;
-}
-
-function getFirstEditableFile(
-  files: Map<string, CheckpointFileState>
-): string | null {
-  for (const [path, file] of files) {
-    if (file.editable) return path;
-  }
+function getFirstFile(files: Map<string, CheckpointFileState>): string | null {
   return files.size > 0 ? (files.keys().next().value as string) : null;
 }
 
 function reducer(state: InterviewState, action: InterviewAction): InterviewState {
   switch (action.type) {
     case "SET_CHECKPOINT": {
-      const checkpoint = action.payload;
-      const files = buildFileMap(checkpoint);
-      const activeFilePath = getFirstEditableFile(files);
-      const isProjectMode = checkpoint.projectFiles && checkpoint.projectFiles.length > 0;
       return {
         ...state,
-        checkpoint,
-        aiEnabled: checkpoint.aiEnabled ?? true,
+        checkpoint: action.payload,
+        aiEnabled: action.payload.aiEnabled ?? true,
+        lastExecution: null,
+      };
+    }
+    case "LOAD_FILES": {
+      const files = action.payload;
+      const activeFilePath = state.activeFilePath && files.has(state.activeFilePath)
+        ? state.activeFilePath
+        : getFirstFile(files);
+      return {
+        ...state,
         files,
         activeFilePath,
-        code: isProjectMode
-          ? (activeFilePath ? (files.get(activeFilePath)?.content ?? "") : "")
-          : (checkpoint.submittedCode ?? checkpoint.starterCode ?? ""),
-        lastExecution: null,
+        code: activeFilePath ? (files.get(activeFilePath)?.content ?? "") : "",
       };
     }
     case "SET_CODE":
@@ -129,17 +109,12 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
     case "SET_STATUS":
       return { ...state, status: action.payload };
     case "CHECKPOINT_RESULT": {
-      const result = action.payload.result;
-      const files = buildFileMap(result);
-      const activeFilePath = state.activeFilePath ?? getFirstEditableFile(files);
       return {
         ...state,
         isSubmitting: false,
         isRunning: false,
-        checkpoint: result,
-        aiEnabled: result.aiEnabled ?? true,
-        files,
-        activeFilePath,
+        checkpoint: action.payload.result,
+        aiEnabled: action.payload.result.aiEnabled ?? true,
         lastExecution: action.payload.execution,
       };
     }
@@ -162,7 +137,7 @@ interface InterviewContextValue {
     result: CheckpointResultResponse,
     execution: ExecutionResponse | null
   ) => void;
-  getEditableFiles: () => Record<string, string>;
+  loadFiles: (files: Map<string, CheckpointFileState>) => void;
 }
 
 const InterviewContext = createContext<InterviewContextValue | null>(null);
@@ -171,6 +146,7 @@ interface InterviewProviderProps {
   interviewId: string;
   initialStatus: InterviewStatus;
   initialCheckpoint: CheckpointResultResponse | null;
+  initialFiles: Map<string, CheckpointFileState>;
   children: ReactNode;
 }
 
@@ -178,14 +154,10 @@ export function InterviewProvider({
   interviewId,
   initialStatus,
   initialCheckpoint,
+  initialFiles,
   children,
 }: InterviewProviderProps) {
-  const initialFiles = initialCheckpoint ? buildFileMap(initialCheckpoint) : new Map();
-  const initialActiveFile = initialCheckpoint
-    ? getFirstEditableFile(initialFiles)
-    : null;
-  const isProjectMode =
-    initialCheckpoint?.projectFiles && initialCheckpoint.projectFiles.length > 0;
+  const initialActiveFile = getFirstFile(initialFiles);
 
   const [state, dispatch] = useReducer(reducer, {
     interviewId,
@@ -194,9 +166,7 @@ export function InterviewProvider({
     aiEnabled: initialCheckpoint?.aiEnabled ?? true,
     files: initialFiles,
     activeFilePath: initialActiveFile,
-    code: isProjectMode
-      ? (initialActiveFile ? (initialFiles.get(initialActiveFile)?.content ?? "") : "")
-      : (initialCheckpoint?.submittedCode ?? initialCheckpoint?.starterCode ?? ""),
+    code: initialActiveFile ? (initialFiles.get(initialActiveFile)?.content ?? "") : "",
     isSubmitting: false,
     isRunning: false,
     lastExecution: null,
@@ -241,15 +211,9 @@ export function InterviewProvider({
     []
   );
 
-  const getEditableFiles = useCallback((): Record<string, string> => {
-    const result: Record<string, string> = {};
-    for (const [path, file] of state.files) {
-      if (file.editable) {
-        result[path] = file.content;
-      }
-    }
-    return result;
-  }, [state.files]);
+  const loadFiles = useCallback((files: Map<string, CheckpointFileState>) => {
+    dispatch({ type: "LOAD_FILES", payload: files });
+  }, []);
 
   return (
     <InterviewContext.Provider
@@ -264,7 +228,7 @@ export function InterviewProvider({
         setExecution,
         setStatus,
         applyCheckpointResult,
-        getEditableFiles,
+        loadFiles,
       }}
     >
       {children}

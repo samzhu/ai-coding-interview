@@ -1,7 +1,6 @@
 package com.interview.question.application;
 
 import com.interview.question.CheckpointDetail;
-import com.interview.question.ProjectFileDetail;
 import com.interview.question.QuestionDetail;
 import jakarta.annotation.PostConstruct;
 import org.springframework.core.io.Resource;
@@ -11,8 +10,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,20 +31,6 @@ public class QuestionQueryService {
         Resource[] yamls = resolver.getResources("classpath:questions/*/question.yml");
         for (Resource yaml : yamls) {
             QuestionDefinition def = yamlMapper.readValue(yaml.getInputStream(), QuestionDefinition.class);
-            String basePath = "questions/" + def.id() + "/";
-
-            List<ProjectFileDetail> files = new ArrayList<>();
-            if (def.projectFiles() != null) {
-                for (QuestionDefinition.ProjectFileDef pf : def.projectFiles()) {
-                    String content = loadResource(basePath + pf.filePath());
-                    files.add(new ProjectFileDetail(
-                            pf.filePath(),
-                            pf.filePath(),
-                            content,
-                            pf.editable(),
-                            pf.sortOrder()));
-                }
-            }
 
             List<CheckpointDetail> checkpoints = new ArrayList<>();
             List<QuestionDefinition.CheckpointDef> cpDefs = def.checkpoints();
@@ -74,17 +57,10 @@ public class QuestionQueryService {
                     def.type(),
                     def.level(),
                     def.image(),
-                    files,
+                    def.workspace(),
                     checkpoints);
 
             questions.put(detail.id(), detail);
-        }
-    }
-
-    private String loadResource(String path) throws IOException {
-        Resource resource = resolver.getResource("classpath:" + path);
-        try (InputStream is = resource.getInputStream()) {
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 

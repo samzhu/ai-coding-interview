@@ -16,7 +16,7 @@ import java.time.Duration;
 @Profile("!lab")
 class DockerClientConfiguration {
 
-    @Value("${execution.docker.host:tcp://localhost:2375}")
+    @Value("${execution.docker.host:unix:///var/run/docker.sock}")
     private String dockerHost;
 
     @Value("${execution.docker.tls-verify:false}")

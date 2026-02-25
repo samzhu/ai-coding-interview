@@ -14,14 +14,8 @@ public record QuestionDefinition(
         String type,
         String level,
         String image,
-        List<ProjectFileDef> projectFiles,
+        String workspace,
         List<CheckpointDef> checkpoints) {
-
-    public record ProjectFileDef(
-            String filePath,
-            boolean editable,
-            int sortOrder) {
-    }
 
     public record CheckpointDef(
             String id,

@@ -1,169 +1,135 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@interview/shared/components/ui/button";
+import { toast } from "sonner";
 import { CodeEditor } from "@/components/code-editor/code-editor";
-import { CheckpointPanel } from "./checkpoint-panel";
-import { AiChatPanel } from "./ai-chat-panel";
 import { ExecutionOutput } from "./execution-output";
 import { FileTabs } from "./file-tabs";
-import { InterviewTimer } from "./interview-timer";
+import { FileExplorer } from "./file-explorer";
+import { RightPanel } from "./right-panel";
+import { InterviewHeader } from "./interview-header";
 import { useInterview } from "@/contexts/interview-context";
 import { useCodeSubmission } from "@/hooks/use-code-submission";
 import { useRunCode } from "@/hooks/use-run-code";
-import { getApiUrl } from "@interview/shared/lib/api-client";
+import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
+import { useWorkspaceFiles } from "@/hooks/use-workspace-files";
 
 interface InterviewWorkspaceProps {
   interviewId: string;
-  language: string;
+  title: string;
+  totalCheckpoints: number;
 }
 
 export function InterviewWorkspace({
   interviewId,
-  language,
+  title,
+  totalCheckpoints,
 }: InterviewWorkspaceProps) {
   const router = useRouter();
-  const { state, setCode, setFileContent, getEditableFiles } = useInterview();
+  const { state, setCode, setFileContent } = useInterview();
   const { submit } = useCodeSubmission();
   const { run } = useRunCode();
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // 5-second debounce code sync for interviewer monitoring
-  useEffect(() => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-
-    const isProjectMode =
-      state.checkpoint?.projectFiles && state.checkpoint.projectFiles.length > 0;
-    const filePath = isProjectMode ? state.activeFilePath ?? undefined : undefined;
-    const code = state.code;
-
-    if (!code) return;
-
-    debounceTimer.current = setTimeout(() => {
-      fetch(getApiUrl(`/interviews/${interviewId}/activity/code`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filePath: filePath ?? null, code }),
-      }).catch(() => {
-        // silent fail — monitoring is best-effort
-      });
-    }, 5000);
-
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [state.code, state.activeFilePath, interviewId]);
-
-  const isProjectMode =
-    state.checkpoint?.projectFiles && state.checkpoint.projectFiles.length > 0;
-
-  const activeFile = state.activeFilePath
-    ? state.files.get(state.activeFilePath)
-    : null;
-  const isReadOnly = activeFile ? !activeFile.editable : false;
+  const { layout, toggleFileExplorer, toggleRightPanel, toggleTerminal, resetLayout, autoExpandTerminal } =
+    useWorkspaceLayout();
+  const { saveFileDebounced } = useWorkspaceFiles(interviewId);
 
   const handleExpired = useCallback(async () => {
     try {
       await submit();
     } catch {
-      // 超時後提交可能被後端拒絕（410），直接導向完成頁
+      // 超時後提交可能被後端拒絕，直接導向完成頁
     }
     router.push(`/interview/${interviewId}/complete`);
   }, [submit, router, interviewId]);
 
   async function handleSubmit() {
-    setSubmitError(null);
     try {
       await submit();
+      autoExpandTerminal();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "提交失敗，請稍後再試");
+      toast.error(err instanceof Error ? err.message : "提交失敗，請稍後再試");
+      autoExpandTerminal();
     }
   }
 
   async function handleRun() {
-    setSubmitError(null);
     try {
       await run();
+      autoExpandTerminal();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "執行失敗，請稍後再試");
+      toast.error(err instanceof Error ? err.message : "執行失敗，請稍後再試");
+      autoExpandTerminal();
     }
   }
 
   function handleCodeChange(value: string) {
-    if (isProjectMode && state.activeFilePath) {
+    if (state.activeFilePath) {
       setFileContent(state.activeFilePath, value);
+      saveFileDebounced(state.activeFilePath, value);
     } else {
       setCode(value);
     }
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Timer bar */}
-      <div className="flex items-center justify-end px-4 py-1 border-b bg-background shrink-0">
-        <InterviewTimer interviewId={interviewId} onExpired={handleExpired} />
-      </div>
+    <div className="flex flex-col h-full overflow-hidden bg-[#1e1e1e] dark">
+      {/* Header — full-width control bar */}
+      <InterviewHeader
+        title={title}
+        totalCheckpoints={totalCheckpoints}
+        onRun={handleRun}
+        onSubmit={handleSubmit}
+        isRunning={state.isRunning}
+        isSubmitting={state.isSubmitting}
+        layout={layout}
+        onToggleFileExplorer={toggleFileExplorer}
+        onToggleRightPanel={toggleRightPanel}
+        onToggleTerminal={toggleTerminal}
+        onResetLayout={resetLayout}
+        interviewId={interviewId}
+        onExpired={handleExpired}
+      />
 
-      {/* Three-column layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: Checkpoint panel (25%) */}
-        <div className="w-1/4 border-r overflow-hidden flex flex-col">
-          <CheckpointPanel />
-        </div>
-
-        {/* Center: Code editor (45%) */}
-        <div className="flex-1 flex flex-col overflow-hidden border-r">
-          {/* File tabs — only shown in project mode */}
-          {isProjectMode && <FileTabs />}
-
-          <div className="flex-1 overflow-hidden">
-            <CodeEditor
-              value={state.code}
-              onChange={handleCodeChange}
-              language={isProjectMode ? detectLanguage(state.activeFilePath) : language}
-              readOnly={isReadOnly}
-              className="h-full"
-            />
+      {/* Main area: three columns */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        {/* Left: File Explorer (collapsible) */}
+        {layout.fileExplorer && (
+          <div className="w-[180px] shrink-0 border-r border-[#333] overflow-hidden">
+            <FileExplorer onCollapse={toggleFileExplorer} />
           </div>
+        )}
 
-          {/* Editor action bar */}
-          <div className="flex items-center gap-2 px-3 py-2 border-t bg-background shrink-0">
-            {submitError && (
-              <p className="text-xs text-destructive flex-1">{submitError}</p>
-            )}
-            <div className="flex gap-2 ml-auto">
-              {isProjectMode && (
-                <Button
-                  variant="outline"
-                  onClick={handleRun}
-                  disabled={state.isRunning || state.isSubmitting || !state.checkpoint}
-                  size="sm"
-                >
-                  {state.isRunning ? "執行中..." : "Run 測試"}
-                </Button>
-              )}
-              <Button
-                onClick={handleSubmit}
-                disabled={state.isSubmitting || state.isRunning || !state.checkpoint}
-                size="sm"
-              >
-                {state.isSubmitting ? "提交中..." : "提交"}
-              </Button>
+        {/* Center: Editor + Terminal (stacked vertically) */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Editor zone */}
+          <div className="flex-1 flex flex-col overflow-hidden border-r border-[#333]">
+            <FileTabs />
+            <div className="flex-1 overflow-hidden">
+              <CodeEditor
+                value={state.code}
+                onChange={handleCodeChange}
+                language={detectLanguage(state.activeFilePath)}
+                readOnly={false}
+                className="h-full"
+              />
             </div>
           </div>
+
+          {/* Terminal: completely hidden or fully shown (VS Code style) */}
+          {layout.terminal && <ExecutionOutput onClose={toggleTerminal} />}
         </div>
 
-        {/* Right: AI chat (30%) */}
-        <div className="w-[30%] overflow-hidden flex flex-col">
-          <AiChatPanel interviewId={interviewId} aiEnabled={state.aiEnabled} />
-        </div>
-      </div>
-
-      {/* Bottom: Execution output */}
-      <div className="h-40 border-t bg-zinc-950 overflow-hidden">
-        <ExecutionOutput />
+        {/* Right: Info Panel (full height, collapsible) */}
+        {layout.rightPanel && (
+          <div className="w-[30%] min-w-[280px] shrink-0 overflow-hidden flex flex-col">
+            <RightPanel
+              interviewId={interviewId}
+              aiEnabled={state.aiEnabled}
+              onClose={toggleRightPanel}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

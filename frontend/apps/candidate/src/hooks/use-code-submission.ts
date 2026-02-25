@@ -8,7 +8,7 @@ import type { CheckpointResultResponse } from "@interview/shared/types";
 
 export function useCodeSubmission() {
   const router = useRouter();
-  const { state, setSubmitting, setCheckpoint, applyCheckpointResult, getEditableFiles } =
+  const { state, setSubmitting, setCheckpoint, applyCheckpointResult } =
     useInterview();
 
   const submit = useCallback(async () => {
@@ -17,16 +17,9 @@ export function useCodeSubmission() {
     setSubmitting(true);
 
     try {
-      const isProjectMode =
-        state.checkpoint.projectFiles && state.checkpoint.projectFiles.length > 0;
-
-      const body = isProjectMode
-        ? { files: getEditableFiles() }
-        : { code: state.code };
-
+      // Files are already in the container via debounced writes
       const result = await apiPost<CheckpointResultResponse>(
-        `/interviews/${state.interviewId}/checkpoints/${state.checkpoint.checkpointId}/submit`,
-        body
+        `/interviews/${state.interviewId}/checkpoints/${state.checkpoint.checkpointId}/submit`
       );
 
       if (result.status === "PASSED") {
@@ -55,7 +48,7 @@ export function useCodeSubmission() {
       setSubmitting(false);
       throw err;
     }
-  }, [state, setSubmitting, setCheckpoint, applyCheckpointResult, getEditableFiles, router]);
+  }, [state, setSubmitting, setCheckpoint, applyCheckpointResult, router]);
 
   return { submit };
 }

@@ -5,10 +5,10 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_BASE
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY packages/shared/ packages/shared/
 COPY apps/candidate/ apps/candidate/
-RUN npm install --workspace=apps/candidate
+RUN npm ci --workspace=apps/candidate
 WORKDIR /app/apps/candidate
 RUN npm run build:export
 

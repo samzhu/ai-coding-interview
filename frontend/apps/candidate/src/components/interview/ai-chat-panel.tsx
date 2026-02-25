@@ -68,19 +68,12 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
   }, [interviewId, setMessages]);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 py-2 border-b shrink-0">
-        <h3 className="text-sm font-semibold">AI 面試助理</h3>
-        <p className="text-xs text-muted-foreground">
-          {aiEnabled ? "可詢問提示或說明，不會直接給出答案" : "此階段 AI 停用"}
-        </p>
-      </div>
-
+    <div className="flex flex-col h-full bg-[#1e1e1e]">
       {!aiEnabled ? (
         <div className="flex flex-1 items-center justify-center p-6 text-center">
           <div>
-            <p className="text-sm font-medium text-muted-foreground mb-1">此階段 AI 不可用</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm font-medium text-[#858585] mb-1">此階段 AI 不可用</p>
+            <p className="text-xs text-[#585858]">
               本階段考驗您獨立解題能力，請不要依賴 AI 提示
             </p>
           </div>
@@ -113,12 +106,12 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
           </Conversation>
 
           {error && (
-            <p className="text-xs text-destructive text-center px-3 py-1 shrink-0">
+            <p className="text-xs text-red-400 text-center px-3 py-1 shrink-0">
               {error.message}
             </p>
           )}
 
-          <div className="p-3 border-t shrink-0">
+          <div className="p-3 border-t border-[#333] shrink-0">
             <PromptInput
               onSubmit={(msg) => {
                 sendMessage({ text: msg.text ?? "" });

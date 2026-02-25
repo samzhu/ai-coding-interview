@@ -12,13 +12,10 @@ public record QuestionResponse(
         String language,
         String type,
         String level,
-        List<ProjectFileResponse> projectFiles,
+        String workspace,
         List<CheckpointResponse> checkpoints) {
 
     public static QuestionResponse from(QuestionDetail detail) {
-        List<ProjectFileResponse> projectFiles = detail.projectFiles().stream()
-                .map(ProjectFileResponse::from)
-                .toList();
         List<CheckpointResponse> checkpoints = detail.checkpoints().stream()
                 .map(CheckpointResponse::from)
                 .toList();
@@ -30,7 +27,7 @@ public record QuestionResponse(
                 detail.language(),
                 detail.type(),
                 detail.level(),
-                projectFiles,
+                detail.workspace(),
                 checkpoints);
     }
 }

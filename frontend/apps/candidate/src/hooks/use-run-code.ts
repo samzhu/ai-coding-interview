@@ -6,7 +6,7 @@ import { useInterview } from "@/contexts/interview-context";
 import type { CheckpointResultResponse } from "@interview/shared/types";
 
 export function useRunCode() {
-  const { state, setRunning, setExecution, getEditableFiles } = useInterview();
+  const { state, setRunning, setExecution } = useInterview();
 
   const run = useCallback(async () => {
     if (!state.checkpoint || state.isRunning || state.isSubmitting) return;
@@ -14,16 +14,9 @@ export function useRunCode() {
     setRunning(true);
 
     try {
-      const isProjectMode =
-        state.checkpoint.projectFiles && state.checkpoint.projectFiles.length > 0;
-
-      const body = isProjectMode
-        ? { files: getEditableFiles() }
-        : { files: { "solution": state.code } };
-
+      // Files are already in the container via debounced writes
       const result = await apiPost<CheckpointResultResponse>(
-        `/interviews/${state.interviewId}/checkpoints/${state.checkpoint.checkpointId}/run`,
-        body
+        `/interviews/${state.interviewId}/checkpoints/${state.checkpoint.checkpointId}/run`
       );
 
       // Use executionOutput as a pseudo ExecutionResponse for display
@@ -40,7 +33,7 @@ export function useRunCode() {
     } finally {
       setRunning(false);
     }
-  }, [state, setRunning, setExecution, getEditableFiles]);
+  }, [state, setRunning, setExecution]);
 
   return { run };
 }

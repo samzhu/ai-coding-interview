@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FRONTEND_DIR="$SCRIPT_DIR/frontend"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 
 # 載入環境變數（docker compose 會用到 POSTGRES_PASSWORD 等）
@@ -14,15 +13,25 @@ echo "=== Step 1: Build backend Docker image (Buildpacks) ==="
 cd "$BACKEND_DIR"
 ./gradlew bootBuildImage -x test
 
-echo "=== Step 2: Build frontend Docker image (Nginx) ==="
-cd "$FRONTEND_DIR"
-docker build -t ai-coding-interview-frontend:latest .
-
-echo "=== Step 3: Start docker compose ==="
+echo "=== Step 2: Build frontend Docker images ==="
 cd "$SCRIPT_DIR"
-docker compose -f docker-compose.yml up -d
+docker compose build admin candidate
 
-echo "=== Step 4: Waiting for backend to be ready ==="
+echo "=== Step 3: Start services ==="
+docker compose up -d
+
+echo "=== Step 4: Pre-pull execution images into DinD ==="
+echo "Waiting for DinD to be ready..."
+for i in $(seq 1 30); do
+  if docker compose exec dind docker info > /dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+docker compose exec dind docker pull spike19820318/ai-coding-interview-question01:latest
+echo "Execution images ready."
+
+echo "=== Step 5: Waiting for backend to be ready ==="
 for i in $(seq 1 30); do
   if curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
     echo "Backend is ready!"
@@ -36,6 +45,7 @@ done
 
 echo ""
 echo "=== Done! ==="
-echo "App:  http://localhost:3000"
-echo "API:  http://localhost:8080"
-echo "Logs: docker compose logs -f"
+echo "Admin:     http://localhost:3000"
+echo "Candidate: http://localhost:3001"
+echo "API:       http://localhost:8080"
+echo "Logs:      docker compose logs -f"

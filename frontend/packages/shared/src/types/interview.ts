@@ -24,8 +24,17 @@ export interface InterviewResponse {
 export interface CheckpointFileState {
   filePath: string;
   content: string;
-  editable: boolean;
-  originalContent: string;
+}
+
+export interface WorkspaceFileEntry {
+  filePath: string;
+  isDirectory: boolean;
+  size: number;
+}
+
+export interface FileContentResponse {
+  filePath: string;
+  content: string;
 }
 
 export interface CheckpointResultResponse {
@@ -35,11 +44,6 @@ export interface CheckpointResultResponse {
   description: string;
   starterCode: string | null;
   testCommand: string | null;
-  projectFiles: Array<{
-    filePath: string;
-    content: string;
-    editable: boolean;
-  }>;
   status: "PENDING" | "IN_PROGRESS" | "PASSED" | "FAILED";
   submittedCode: string | null;
   executionOutput: string | null;
@@ -54,9 +58,4 @@ export interface CreateInterviewRequest {
   scheduledAt: string;
   questionId: string;
   aiModel?: string;
-}
-
-export interface SubmitCodeRequest {
-  code?: string;
-  files?: Record<string, string>;
 }

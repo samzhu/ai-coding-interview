@@ -29,7 +29,7 @@ class QuestionQueryServiceTest {
     @DisplayName("查詢所有題目應回傳所有載入的題目")
     void shouldReturnAllLoadedQuestions() {
         String id = "question1";
-        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, null, List.of(), List.of());
+        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, null, null, List.of());
         QuestionQueryService service = new QuestionQueryServiceTestHelper(List.of(detail));
 
         List<QuestionDetail> result = service.findAll();
@@ -42,7 +42,7 @@ class QuestionQueryServiceTest {
     @DisplayName("查詢存在的題目應回傳正確詳情")
     void shouldReturnQuestionWhenFound() {
         String id = "question1";
-        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, null, List.of(), List.of());
+        QuestionDetail detail = new QuestionDetail(id, "Test Q", "desc", "EASY", "python", null, null, null, null, List.of());
         QuestionQueryService service = new QuestionQueryServiceTestHelper(List.of(detail));
 
         QuestionDetail result = service.findById(id);

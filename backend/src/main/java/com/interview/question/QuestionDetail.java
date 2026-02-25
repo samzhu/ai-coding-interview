@@ -11,6 +11,6 @@ public record QuestionDetail(
         String type,
         String level,
         String image,
-        List<ProjectFileDetail> projectFiles,
+        String workspace,
         List<CheckpointDetail> checkpoints) {
 }
