@@ -9,6 +9,9 @@ interface RightPanelProps {
   interviewId: string;
   aiEnabled?: boolean;
   onClose: () => void;
+  onRun: () => void;
+  isRunning: boolean;
+  onEndInterview: () => void;
 }
 
 type TabId = "question" | "ai";
@@ -18,7 +21,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "ai", label: "🤖 AI 助理" },
 ];
 
-export function RightPanel({ interviewId, aiEnabled, onClose }: RightPanelProps) {
+export function RightPanel({ interviewId, aiEnabled, onClose, onRun, isRunning, onEndInterview }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("ai");
 
   return (
@@ -52,7 +55,7 @@ export function RightPanel({ interviewId, aiEnabled, onClose }: RightPanelProps)
       {/* Tab content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === "question" ? (
-          <CheckpointPanel />
+          <CheckpointPanel onRun={onRun} isRunning={isRunning} onEndInterview={onEndInterview} />
         ) : (
           <AiChatPanel interviewId={interviewId} aiEnabled={aiEnabled} />
         )}

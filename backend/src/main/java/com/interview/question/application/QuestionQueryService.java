@@ -58,7 +58,8 @@ public class QuestionQueryService {
                     def.level(),
                     def.image(),
                     def.workspace(),
-                    checkpoints);
+                    checkpoints,
+                    def.exclude());
 
             questions.put(detail.id(), detail);
         }

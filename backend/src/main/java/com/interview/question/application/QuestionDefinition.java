@@ -15,7 +15,8 @@ public record QuestionDefinition(
         String level,
         String image,
         String workspace,
-        List<CheckpointDef> checkpoints) {
+        List<CheckpointDef> checkpoints,
+        List<String> exclude) {
 
     public record CheckpointDef(
             String id,

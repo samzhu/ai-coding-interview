@@ -90,7 +90,7 @@ public class CheckpointProgressService {
         result.startProgress("submitted");
         checkpointResultRepository.save(result);
 
-        String containerId = interview.getContainerId();
+        String containerId = interviewService.ensureContainerRunning(interview.getId());
         String workspace = question.workspace() != null ? question.workspace() : "/workspace";
         String fullCommand = "cd " + workspace + " && " + checkpoint.testCommand();
 
@@ -132,7 +132,7 @@ public class CheckpointProgressService {
         var question = questionService.getQuestion(interview.getQuestionId());
         var checkpoint = findCheckpoint(question, checkpointId);
 
-        String containerId = interview.getContainerId();
+        String containerId = interviewService.ensureContainerRunning(interviewId);
         String workspace = question.workspace() != null ? question.workspace() : "/workspace";
         String fullCommand = "cd " + workspace + " && " + checkpoint.testCommand();
 

@@ -31,7 +31,7 @@ class QuestionControllerTest {
     @DisplayName("GET /api/v1/questions 應回傳題目列表")
     void shouldListQuestions() throws Exception {
         String id = "question1";
-        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of());
+        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(), null);
         when(service.findAllQuestions()).thenReturn(List.of(detail));
 
         mockMvc.perform(get("/api/v1/questions"))
@@ -57,7 +57,7 @@ class QuestionControllerTest {
         String id = "question1";
         String cpId = "1";
         var cp = new CheckpointDetail(cpId, 1, "Implement", "desc", "// code", null, List.of());
-        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(cp));
+        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(cp), null);
         when(service.getQuestion(id)).thenReturn(detail);
 
         mockMvc.perform(get("/api/v1/questions/{id}", id))

@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { apiPost } from "@interview/shared/lib/api-client";
 import { CodeEditor } from "@/components/code-editor/code-editor";
 import { ExecutionOutput } from "./execution-output";
 import { FileTabs } from "./file-tabs";
@@ -11,56 +12,67 @@ import { RightPanel } from "./right-panel";
 import { InterviewHeader } from "./interview-header";
 import { useInterview } from "@/contexts/interview-context";
 import { useCodeSubmission } from "@/hooks/use-code-submission";
-import { useRunCode } from "@/hooks/use-run-code";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { useWorkspaceFiles } from "@/hooks/use-workspace-files";
+import { useResizablePanel } from "@/hooks/use-resizable-panel";
 
 interface InterviewWorkspaceProps {
   interviewId: string;
   title: string;
-  totalCheckpoints: number;
 }
 
 export function InterviewWorkspace({
   interviewId,
   title,
-  totalCheckpoints,
 }: InterviewWorkspaceProps) {
   const router = useRouter();
   const { state, setCode, setFileContent } = useInterview();
   const { submit } = useCodeSubmission();
-  const { run } = useRunCode();
   const { layout, toggleFileExplorer, toggleRightPanel, toggleTerminal, resetLayout, autoExpandTerminal } =
     useWorkspaceLayout();
   const { saveFileDebounced } = useWorkspaceFiles(interviewId);
+  const explorerResize = useResizablePanel({ initialWidth: 180, minWidth: 120, maxWidth: 480 });
+  const rightPanelResize = useResizablePanel({ initialWidth: 320, minWidth: 240, maxWidth: 600, reversed: true });
 
   const handleExpired = useCallback(async () => {
     try {
-      await submit();
+      await apiPost(`/interviews/${interviewId}/complete`);
     } catch {
-      // 超時後提交可能被後端拒絕，直接導向完成頁
+      // 超時後呼叫可能被後端拒絕，直接導向完成頁
     }
     router.push(`/interview/${interviewId}/complete`);
-  }, [submit, router, interviewId]);
-
-  async function handleSubmit() {
-    try {
-      await submit();
-      autoExpandTerminal();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "提交失敗，請稍後再試");
-      autoExpandTerminal();
-    }
-  }
+  }, [interviewId, router]);
 
   async function handleRun() {
     try {
-      await run();
+      await submit();
       autoExpandTerminal();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "執行失敗，請稍後再試");
       autoExpandTerminal();
     }
+  }
+
+  async function handleEndInterview() {
+    const currentSeq = state.checkpoint?.sequenceNumber ?? 1;
+    const total = state.checkpoints.length;
+    const passed = currentSeq - 1;
+    const allPassed =
+      total > 0 &&
+      state.checkpoint?.status === "PASSED" &&
+      state.checkpoint?.sequenceNumber === total;
+    if (!allPassed && passed < total) {
+      const confirmed = window.confirm(
+        `還有 ${total - passed} 個關卡未完成，確定要結束測試嗎？`
+      );
+      if (!confirmed) return;
+    }
+    try {
+      await apiPost(`/interviews/${interviewId}/complete`);
+    } catch {
+      // ignore
+    }
+    router.push(`/interview/${interviewId}/complete`);
   }
 
   function handleCodeChange(value: string) {
@@ -77,11 +89,6 @@ export function InterviewWorkspace({
       {/* Header — full-width control bar */}
       <InterviewHeader
         title={title}
-        totalCheckpoints={totalCheckpoints}
-        onRun={handleRun}
-        onSubmit={handleSubmit}
-        isRunning={state.isRunning}
-        isSubmitting={state.isSubmitting}
         layout={layout}
         onToggleFileExplorer={toggleFileExplorer}
         onToggleRightPanel={toggleRightPanel}
@@ -93,11 +100,23 @@ export function InterviewWorkspace({
 
       {/* Main area: three columns */}
       <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* Left: File Explorer (collapsible) */}
+        {/* Left: File Explorer (collapsible, resizable) */}
         {layout.fileExplorer && (
-          <div className="w-[180px] shrink-0 border-r border-[#333] overflow-hidden">
-            <FileExplorer onCollapse={toggleFileExplorer} />
-          </div>
+          <>
+            <div
+              className="shrink-0 border-r border-[#333] overflow-hidden"
+              style={{ width: explorerResize.width }}
+            >
+              <FileExplorer onCollapse={toggleFileExplorer} />
+            </div>
+            {/* Drag handle */}
+            <div
+              className="relative w-[5px] shrink-0 group cursor-col-resize z-10"
+              onMouseDown={explorerResize.onMouseDown}
+            >
+              <div className="absolute inset-y-0 left-[2px] w-[1px] bg-transparent group-hover:bg-[#007acc] transition-colors duration-100" />
+            </div>
+          </>
         )}
 
         {/* Center: Editor + Terminal (stacked vertically) */}
@@ -120,15 +139,30 @@ export function InterviewWorkspace({
           {layout.terminal && <ExecutionOutput onClose={toggleTerminal} />}
         </div>
 
-        {/* Right: Info Panel (full height, collapsible) */}
+        {/* Right: Info Panel (full height, collapsible, resizable) */}
         {layout.rightPanel && (
-          <div className="w-[30%] min-w-[280px] shrink-0 overflow-hidden flex flex-col">
-            <RightPanel
-              interviewId={interviewId}
-              aiEnabled={state.aiEnabled}
-              onClose={toggleRightPanel}
-            />
-          </div>
+          <>
+            {/* Drag handle */}
+            <div
+              className="relative w-[5px] shrink-0 group cursor-col-resize z-10"
+              onMouseDown={rightPanelResize.onMouseDown}
+            >
+              <div className="absolute inset-y-0 left-[2px] w-[1px] bg-transparent group-hover:bg-[#007acc] transition-colors duration-100" />
+            </div>
+            <div
+              className="shrink-0 overflow-hidden flex flex-col"
+              style={{ width: rightPanelResize.width }}
+            >
+              <RightPanel
+                interviewId={interviewId}
+                aiEnabled={state.aiEnabled}
+                onClose={toggleRightPanel}
+                onRun={handleRun}
+                isRunning={state.isRunning}
+                onEndInterview={handleEndInterview}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

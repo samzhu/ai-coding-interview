@@ -80,7 +80,7 @@ class InterviewServiceTest {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var cp = new CheckpointDetail("1", 1, "CP1", "desc", "code", null, List.of());
-        var question = new QuestionDetail(QUESTION_ID, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(cp));
+        var question = new QuestionDetail(QUESTION_ID, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(cp), null);
         when(questionService.getQuestion(QUESTION_ID)).thenReturn(question);
         when(checkpointResultRepository.saveAll(any())).thenReturn(List.of());
 

@@ -127,6 +127,34 @@ public class InterviewService {
         return new TimeRemainingResponse(remainingSeconds, totalSeconds);
     }
 
+    /**
+     * Ensures the interview has a running container.
+     * If containerId is blank or the container has stopped, starts a new one and persists it.
+     * Returns the containerId.
+     */
+    public String ensureContainerRunning(UUID interviewId) {
+        Interview interview = repository.findById(interviewId)
+                .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + interviewId));
+
+        String containerId = interview.getContainerId();
+        if (containerId != null && !containerId.isBlank()) {
+            if (containerService.isRunning(containerId)) {
+                return containerId;
+            }
+            log.warn("Container {} is no longer running for interview {}, starting new one", containerId, interviewId);
+        }
+
+        var question = questionService.getQuestion(interview.getQuestionId());
+        if (question.image() == null || question.image().isBlank()) {
+            throw new IllegalStateException("No Docker image configured for question: " + interview.getQuestionId());
+        }
+        String newContainerId = containerService.startContainer(question.image());
+        interview.assignContainer(newContainerId);
+        repository.save(interview);
+        log.info("On-demand started container {} for interview {}", newContainerId, interviewId);
+        return newContainerId;
+    }
+
     private void stopContainerIfRunning(Interview interview) {
         String containerId = interview.getContainerId();
         if (containerId != null && !containerId.isBlank()) {

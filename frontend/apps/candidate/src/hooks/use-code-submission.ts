@@ -1,20 +1,18 @@
 "use client";
 
 import { useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { apiPost, apiGet, ApiError } from "@interview/shared/lib/api-client";
 import { useInterview } from "@/contexts/interview-context";
 import type { CheckpointResultResponse } from "@interview/shared/types";
 
 export function useCodeSubmission() {
-  const router = useRouter();
-  const { state, setSubmitting, setCheckpoint, applyCheckpointResult } =
+  const { state, setRunning, setCheckpoint, applyCheckpointResult } =
     useInterview();
 
   const submit = useCallback(async () => {
-    if (!state.checkpoint || state.isSubmitting) return;
+    if (!state.checkpoint || state.isRunning) return;
 
-    setSubmitting(true);
+    setRunning(true);
 
     try {
       // Files are already in the container via debounced writes
@@ -22,8 +20,18 @@ export function useCodeSubmission() {
         `/interviews/${state.interviewId}/checkpoints/${state.checkpoint.checkpointId}/submit`
       );
 
+      const execution = {
+        exitCode: result.status === "PASSED" ? 0 : 1,
+        stdout: result.executionOutput ?? "",
+        stderr: "",
+        durationMs: 0,
+        status: (result.status === "PASSED" ? "SUCCESS" : "RUNTIME_ERROR") as
+          | "SUCCESS"
+          | "RUNTIME_ERROR",
+      };
+
       if (result.status === "PASSED") {
-        applyCheckpointResult(result, null);
+        applyCheckpointResult(result, execution);
 
         // Wait briefly then fetch the next checkpoint
         await new Promise((r) => setTimeout(r, 1000));
@@ -35,20 +43,20 @@ export function useCodeSubmission() {
           setCheckpoint(next);
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) {
-            // No more checkpoints — interview complete
-            router.push(`/interview/${state.interviewId}/complete`);
+            // All checkpoints passed — virtual "end test" step will guide the user
+            return;
           } else {
             throw err;
           }
         }
       } else {
-        applyCheckpointResult(result, null);
+        applyCheckpointResult(result, execution);
       }
     } catch (err) {
-      setSubmitting(false);
+      setRunning(false);
       throw err;
     }
-  }, [state, setSubmitting, setCheckpoint, applyCheckpointResult, router]);
+  }, [state, setRunning, setCheckpoint, applyCheckpointResult]);
 
   return { submit };
 }

@@ -12,14 +12,17 @@ import type {
   CheckpointFileState,
   InterviewStatus,
   ExecutionResponse,
+  CheckpointResponse,
 } from "@interview/shared/types";
 
 interface InterviewState {
   interviewId: string;
   status: InterviewStatus;
   checkpoint: CheckpointResultResponse | null;
+  checkpoints: CheckpointResponse[];
   aiEnabled: boolean;
   files: Map<string, CheckpointFileState>;
+  openFiles: string[];
   activeFilePath: string | null;
   code: string;
   isSubmitting: boolean;
@@ -32,6 +35,8 @@ type InterviewAction =
   | { type: "SET_CODE"; payload: string }
   | { type: "SET_FILE_CONTENT"; payload: { filePath: string; content: string } }
   | { type: "SET_ACTIVE_FILE"; payload: string }
+  | { type: "OPEN_FILE"; payload: string }
+  | { type: "CLOSE_FILE"; payload: string }
   | { type: "SET_SUBMITTING"; payload: boolean }
   | { type: "SET_RUNNING"; payload: boolean }
   | { type: "SET_EXECUTION"; payload: ExecutionResponse }
@@ -42,8 +47,12 @@ type InterviewAction =
       payload: { result: CheckpointResultResponse; execution: ExecutionResponse | null };
     };
 
-function getFirstFile(files: Map<string, CheckpointFileState>): string | null {
-  return files.size > 0 ? (files.keys().next().value as string) : null;
+function findReadme(files: Map<string, CheckpointFileState>): string | null {
+  for (const filePath of files.keys()) {
+    const name = filePath.split("/").pop() ?? "";
+    if (name.toLowerCase() === "readme.md") return filePath;
+  }
+  return null;
 }
 
 function reducer(state: InterviewState, action: InterviewAction): InterviewState {
@@ -58,12 +67,13 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
     }
     case "LOAD_FILES": {
       const files = action.payload;
-      const activeFilePath = state.activeFilePath && files.has(state.activeFilePath)
-        ? state.activeFilePath
-        : getFirstFile(files);
+      const readmePath = findReadme(files);
+      const openFiles = readmePath ? [readmePath] : [];
+      const activeFilePath = readmePath;
       return {
         ...state,
         files,
+        openFiles,
         activeFilePath,
         code: activeFilePath ? (files.get(activeFilePath)?.content ?? "") : "",
       };
@@ -93,11 +103,48 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
       };
     }
     case "SET_ACTIVE_FILE": {
-      const file = state.files.get(action.payload);
+      const filePath = action.payload;
+      const file = state.files.get(filePath);
+      const openFiles = state.openFiles.includes(filePath)
+        ? state.openFiles
+        : [...state.openFiles, filePath];
       return {
         ...state,
-        activeFilePath: action.payload,
+        openFiles,
+        activeFilePath: filePath,
         code: file?.content ?? state.code,
+      };
+    }
+    case "OPEN_FILE": {
+      const filePath = action.payload;
+      const file = state.files.get(filePath);
+      const openFiles = state.openFiles.includes(filePath)
+        ? state.openFiles
+        : [...state.openFiles, filePath];
+      return {
+        ...state,
+        openFiles,
+        activeFilePath: filePath,
+        code: file?.content ?? state.code,
+      };
+    }
+    case "CLOSE_FILE": {
+      const path = action.payload;
+      const newOpenFiles = state.openFiles.filter((f) => f !== path);
+      let newActive = state.activeFilePath;
+      if (state.activeFilePath === path) {
+        if (newOpenFiles.length > 0) {
+          const idx = state.openFiles.indexOf(path);
+          newActive = newOpenFiles[Math.max(0, idx - 1)];
+        } else {
+          newActive = null;
+        }
+      }
+      return {
+        ...state,
+        openFiles: newOpenFiles,
+        activeFilePath: newActive,
+        code: newActive ? (state.files.get(newActive)?.content ?? "") : "",
       };
     }
     case "SET_SUBMITTING":
@@ -128,6 +175,8 @@ interface InterviewContextValue {
   setCode: (code: string) => void;
   setFileContent: (filePath: string, content: string) => void;
   setActiveFile: (filePath: string) => void;
+  openFile: (filePath: string) => void;
+  closeFile: (filePath: string) => void;
   setCheckpoint: (checkpoint: CheckpointResultResponse) => void;
   setSubmitting: (v: boolean) => void;
   setRunning: (v: boolean) => void;
@@ -146,6 +195,7 @@ interface InterviewProviderProps {
   interviewId: string;
   initialStatus: InterviewStatus;
   initialCheckpoint: CheckpointResultResponse | null;
+  initialCheckpoints: CheckpointResponse[];
   initialFiles: Map<string, CheckpointFileState>;
   children: ReactNode;
 }
@@ -154,17 +204,22 @@ export function InterviewProvider({
   interviewId,
   initialStatus,
   initialCheckpoint,
+  initialCheckpoints,
   initialFiles,
   children,
 }: InterviewProviderProps) {
-  const initialActiveFile = getFirstFile(initialFiles);
+  const readmePath = findReadme(initialFiles);
+  const initialOpenFiles = readmePath ? [readmePath] : [];
+  const initialActiveFile = readmePath;
 
   const [state, dispatch] = useReducer(reducer, {
     interviewId,
     status: initialStatus,
     checkpoint: initialCheckpoint,
+    checkpoints: initialCheckpoints,
     aiEnabled: initialCheckpoint?.aiEnabled ?? true,
     files: initialFiles,
+    openFiles: initialOpenFiles,
     activeFilePath: initialActiveFile,
     code: initialActiveFile ? (initialFiles.get(initialActiveFile)?.content ?? "") : "",
     isSubmitting: false,
@@ -182,6 +237,14 @@ export function InterviewProvider({
 
   const setActiveFile = useCallback((filePath: string) => {
     dispatch({ type: "SET_ACTIVE_FILE", payload: filePath });
+  }, []);
+
+  const openFile = useCallback((filePath: string) => {
+    dispatch({ type: "OPEN_FILE", payload: filePath });
+  }, []);
+
+  const closeFile = useCallback((filePath: string) => {
+    dispatch({ type: "CLOSE_FILE", payload: filePath });
   }, []);
 
   const setCheckpoint = useCallback((checkpoint: CheckpointResultResponse) => {
@@ -222,6 +285,8 @@ export function InterviewProvider({
         setCode,
         setFileContent,
         setActiveFile,
+        openFile,
+        closeFile,
         setCheckpoint,
         setSubmitting,
         setRunning,

@@ -9,6 +9,7 @@ import type {
   InterviewResponse,
   InterviewStatus,
   CheckpointResultResponse,
+  CheckpointResponse,
   QuestionResponse,
   WorkspaceFileEntry,
   FileContentResponse,
@@ -21,7 +22,7 @@ export function InterviewClient() {
   const [status, setStatus] = useState<InterviewStatus>("IN_PROGRESS");
   const [checkpoint, setCheckpoint] = useState<CheckpointResultResponse | null>(null);
   const [initialFiles, setInitialFiles] = useState<Map<string, CheckpointFileState>>(new Map());
-  const [totalCheckpoints, setTotalCheckpoints] = useState<number>(1);
+  const [allCheckpoints, setAllCheckpoints] = useState<CheckpointResponse[]>([]);
   const [title, setTitle] = useState<string>("面試進行中");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -63,13 +64,13 @@ export function InterviewClient() {
         setStatus((interview?.status ?? "IN_PROGRESS") as InterviewStatus);
         setTitle(interview?.title ?? "面試進行中");
 
-        // Fetch question for total checkpoints count
+        // Fetch question for checkpoints list
         if (interview?.questionId) {
           try {
             const q = await apiGet<QuestionResponse>(
               `/questions/${interview.questionId}`
             );
-            setTotalCheckpoints(q.checkpoints?.length ?? 1);
+            setAllCheckpoints(q.checkpoints ?? []);
           } catch {
             // use defaults
           }
@@ -125,13 +126,13 @@ export function InterviewClient() {
       interviewId={id}
       initialStatus={status}
       initialCheckpoint={checkpoint}
+      initialCheckpoints={allCheckpoints}
       initialFiles={initialFiles}
     >
       <div className="h-screen overflow-hidden">
         <InterviewWorkspace
           interviewId={id}
           title={title}
-          totalCheckpoints={totalCheckpoints}
         />
       </div>
     </InterviewProvider>
