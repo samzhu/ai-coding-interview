@@ -1,14 +1,10 @@
 package com.interview.interview.application;
 
 import com.interview.execution.ContainerService;
-import com.interview.execution.ExamConfig;
 import com.interview.execution.ExamConfigService;
 import com.interview.interview.InterviewCompletedEvent;
-import com.interview.interview.InterviewStartedEvent;
-import com.interview.interview.domain.CheckpointResult;
 import com.interview.interview.domain.Interview;
 import com.interview.interview.domain.InterviewStatus;
-import com.interview.interview.infrastructure.persistence.CheckpointResultRepository;
 import com.interview.interview.infrastructure.persistence.InterviewRepository;
 import com.interview.interview.interfaces.rest.TimeRemainingResponse;
 import com.interview.question.QuestionDetail;
@@ -22,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,9 +39,6 @@ class InterviewServiceTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private CheckpointResultRepository checkpointResultRepository;
-
-    @Mock
     private QuestionService questionService;
 
     @Mock
@@ -55,15 +47,11 @@ class InterviewServiceTest {
     @Mock
     private ExamConfigService examConfigService;
 
+    @Mock
+    private ContainerInitializationService containerInitService;
+
     @InjectMocks
     private InterviewService service;
-
-    /** 建立含 2 個 checkpoint 的 ExamConfig stub */
-    private static ExamConfig stubExamConfig() {
-        var cp1 = new ExamConfig.ExamCheckpoint("1", "CP1 title", "CP1 desc", "./run.sh test1");
-        var cp2 = new ExamConfig.ExamCheckpoint("2", "CP2 title", "CP2 desc", "./run.sh test2");
-        return new ExamConfig("/workspace", List.of(), List.of(cp1, cp2));
-    }
 
     @Test
     @DisplayName("成功建立面試並儲存")
@@ -83,28 +71,47 @@ class InterviewServiceTest {
     }
 
     @Test
-    @DisplayName("成功開始面試，狀態變為 IN_PROGRESS 並從 exam.yml 初始化 checkpoints")
+    @DisplayName("成功開始面試，狀態變為 IN_PROGRESS，containerStatus 設為 INITIALIZING，並觸發異步容器初始化")
     void shouldStartInterviewSuccessfully() {
         Interview scheduled = Interview.schedule(
                 UUID.randomUUID(), UUID.randomUUID(), "Test", Instant.now().plusSeconds(3600), QUESTION_ID, null);
         when(repository.findById(scheduled.getId())).thenReturn(Optional.of(scheduled));
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
+        // Question has a Docker image — async init path is used
         var question = new QuestionDetail(QUESTION_ID, "Hangman", "desc", "MEDIUM", "java",
                 null, null, "some-image:latest");
         when(questionService.getQuestion(QUESTION_ID)).thenReturn(question);
-        when(containerService.startContainer("some-image:latest")).thenReturn("container-abc");
-        when(examConfigService.getExamConfig("container-abc")).thenReturn(stubExamConfig());
-        when(checkpointResultRepository.saveAll(any())).thenReturn(List.of());
 
         Interview result = service.startInterview(scheduled.getId());
 
         assertThat(result.getInterviewStatus()).isEqualTo(InterviewStatus.IN_PROGRESS);
         assertThat(result.getStartedAt()).isNotNull();
-        verify(checkpointResultRepository).saveAll(any());
-        verify(eventPublisher).publishEvent(any(InterviewStartedEvent.class));
-        // exam config 快取應被讀取
-        verify(examConfigService).getExamConfig("container-abc");
+        assertThat(result.getContainerStatus()).isEqualTo("INITIALIZING");
+        // Container init is delegated asynchronously; sync path only triggers the service
+        verify(containerInitService).initializeContainerAsync(scheduled.getId());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    @DisplayName("題目無 Docker image 時開始面試應同步發布 InterviewStartedEvent，不觸發異步初始化")
+    void shouldStartInterviewWithoutContainerWhenNoImage() {
+        Interview scheduled = Interview.schedule(
+                UUID.randomUUID(), UUID.randomUUID(), "Test", Instant.now().plusSeconds(3600), QUESTION_ID, null);
+        when(repository.findById(scheduled.getId())).thenReturn(Optional.of(scheduled));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Question has no Docker image
+        var question = new QuestionDetail(QUESTION_ID, "No-container Q", "desc", "EASY", "java",
+                null, null, null);
+        when(questionService.getQuestion(QUESTION_ID)).thenReturn(question);
+
+        Interview result = service.startInterview(scheduled.getId());
+
+        assertThat(result.getInterviewStatus()).isEqualTo(InterviewStatus.IN_PROGRESS);
+        assertThat(result.getContainerStatus()).isNull();
+        verify(eventPublisher).publishEvent(any(com.interview.interview.InterviewStartedEvent.class));
+        verifyNoInteractions(containerInitService);
     }
 
     @Test

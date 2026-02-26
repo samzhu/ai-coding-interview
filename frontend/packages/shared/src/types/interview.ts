@@ -19,6 +19,12 @@ export interface InterviewResponse {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  containerStatus: "INITIALIZING" | "READY" | "FAILED" | null;
+}
+
+export interface ContainerStatusResponse {
+  status: "INITIALIZING" | "READY" | "FAILED" | null;
+  containerReady: boolean;
 }
 
 export interface CheckpointFileState {

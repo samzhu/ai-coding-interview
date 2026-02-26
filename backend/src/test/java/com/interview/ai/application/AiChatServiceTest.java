@@ -131,7 +131,7 @@ class AiChatServiceTest {
         when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(userMsg));
         when(repository.save(any())).thenReturn(savedMsg);
 
-        var result = service.streamChat(interviewId, "Any hints?");
+        var result = service.streamChat(interviewId, "Any hints?", null);
 
         assertThat(result.messageId()).isNotNull();
 
@@ -161,7 +161,7 @@ class AiChatServiceTest {
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(false);
         AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
 
-        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint"))
+        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null))
                 .isInstanceOf(AiDisabledException.class)
                 .hasMessageContaining("AI 不可用");
     }
@@ -187,7 +187,7 @@ class AiChatServiceTest {
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
         AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
 
-        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint"))
+        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null))
                 .isInstanceOf(InterviewExpiredException.class)
                 .hasMessageContaining("時間已到");
     }
@@ -208,7 +208,7 @@ class AiChatServiceTest {
         when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(userMsg));
         when(repository.save(any())).thenReturn(stubMsg);
 
-        var result = service.streamChat(interviewId, "Hello");
+        var result = service.streamChat(interviewId, "Hello", null);
 
         assertThat(result.messageId()).isNotNull();
 

@@ -27,16 +27,24 @@ public class ConversationMessage {
     @Column("created_at")
     private Instant createdAt;
 
+    @Column("model")
+    private String model;
+
     protected ConversationMessage() {
     }
 
     public static ConversationMessage create(UUID interviewId, ConversationRole role, String content) {
+        return create(interviewId, role, content, null);
+    }
+
+    public static ConversationMessage create(UUID interviewId, ConversationRole role, String content, String model) {
         ConversationMessage msg = new ConversationMessage();
         msg.id = UUID.randomUUID();
         msg.interviewId = interviewId;
         msg.role = role.name();
         msg.content = content;
         msg.createdAt = Instant.now();
+        msg.model = model;
         return msg;
     }
 

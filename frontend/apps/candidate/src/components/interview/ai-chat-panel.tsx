@@ -3,9 +3,9 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import type { UIMessage } from "ai";
-import { useMemo, useEffect } from "react";
-import type { ChatMessage } from "@interview/shared/types";
-import { getApiUrl } from "@interview/shared/lib/api-client";
+import { useMemo, useEffect, useRef, useState } from "react";
+import type { AiModelInfo, ChatMessage } from "@interview/shared/types";
+import { apiGet, getApiUrl } from "@interview/shared/lib/api-client";
 import {
   Conversation,
   ConversationContent,
@@ -20,6 +20,11 @@ import {
 import {
   PromptInput,
   PromptInputFooter,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@interview/shared/components/ai-elements/prompt-input";
@@ -37,15 +42,34 @@ function getTextContent(message: UIMessage): string {
 }
 
 export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps) {
+  const [models, setModels] = useState<AiModelInfo[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState("");
+  // 用 ref 存模型 ID，讓 transport body function 每次 request 動態取值，
+  // 而不需要重建 transport（重建會清空 messages）
+  const modelIdRef = useRef(selectedModelId);
+  modelIdRef.current = selectedModelId;
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: getApiUrl(`/interviews/${interviewId}/ai/chat/stream`),
+        body: () => ({ modelId: modelIdRef.current }),
       }),
     [interviewId]
   );
 
   const { messages, setMessages, sendMessage, status, error, stop } = useChat({ transport });
+
+  useEffect(() => {
+    apiGet<AiModelInfo[]>("/ai/models")
+      .then((list) => {
+        setModels(list);
+        if (list.length > 0) setSelectedModelId(list[0].id);
+      })
+      .catch((err) => {
+        console.error("[AiChatPanel] Failed to load AI models:", err);
+      });
+  }, []);
 
   useEffect(() => {
     async function loadHistory() {
@@ -119,7 +143,26 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
             >
               <PromptInputTextarea placeholder="輸入問題...（Enter 送出，Shift+Enter 換行）" />
               <PromptInputFooter>
-                <div />
+                {models.length > 1 ? (
+                  <PromptInputSelect value={selectedModelId} onValueChange={setSelectedModelId}>
+                    {/* 深色 pill 風格，在 #1e1e1e 背景上清晰可見 */}
+                    <PromptInputSelectTrigger className="h-7 w-auto max-w-[200px] text-xs bg-[#2d2d2d] border border-[#404040] rounded-md text-[#cccccc] hover:bg-[#353535] hover:text-[#e0e0e0]">
+                      <PromptInputSelectValue />
+                    </PromptInputSelectTrigger>
+                    <PromptInputSelectContent>
+                      {models.map((m) => (
+                        <PromptInputSelectItem key={m.id} value={m.id}>{m.name}</PromptInputSelectItem>
+                      ))}
+                    </PromptInputSelectContent>
+                  </PromptInputSelect>
+                ) : models.length === 1 ? (
+                  // 單一模型時顯示純文字 pill，讓使用者知道當前模型
+                  <span className="text-xs text-[#999] bg-[#2d2d2d] border border-[#404040] rounded-md px-2.5 py-1 select-none">
+                    {models[0].name}
+                  </span>
+                ) : (
+                  <div />
+                )}
                 <PromptInputSubmit status={status} onStop={stop} />
               </PromptInputFooter>
             </PromptInput>

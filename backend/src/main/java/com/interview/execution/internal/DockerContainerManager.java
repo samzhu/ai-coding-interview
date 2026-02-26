@@ -3,6 +3,7 @@ package com.interview.execution.internal;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.StreamType;
@@ -37,8 +38,32 @@ class DockerContainerManager implements ContainerManager {
         this.dockerClient = dockerClient;
     }
 
+    /**
+     * Pulls the image from the registry if it is not present on the local Docker daemon.
+     * Pull may take several minutes for large images; caller is expected to invoke this
+     * from an async/background thread.
+     */
+    private void pullImageIfAbsent(String image) {
+        try {
+            dockerClient.inspectImageCmd(image).exec();
+        } catch (NotFoundException e) {
+            log.info("Image {} not found locally, pulling...", image);
+            try {
+                dockerClient.pullImageCmd(image)
+                        .start()
+                        .awaitCompletion(5, TimeUnit.MINUTES);
+                log.info("Successfully pulled image {}", image);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Image pull interrupted: " + image, ie);
+            }
+        }
+    }
+
     @Override
     public String startContainer(String image, int memoryMb, int cpuCount) {
+        pullImageIfAbsent(image);
+
         HostConfig hostConfig = HostConfig.newHostConfig()
                 .withNetworkMode("none")
                 .withMemory((long) memoryMb * 1024 * 1024)

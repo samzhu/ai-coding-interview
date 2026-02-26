@@ -76,18 +76,37 @@ class InterviewControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/interviews/{id}/start 成功，回傳 200")
-    void shouldStartInterviewAndReturn200() throws Exception {
+    @DisplayName("POST /api/v1/interviews/{id}/start 成功，回傳 202 (容器異步初始化)")
+    void shouldStartInterviewAndReturn202() throws Exception {
         Interview inProgress = Interview.schedule(
                 UUID.randomUUID(), UUID.randomUUID(),
                 "Test", Instant.now().plusSeconds(3600), QUESTION_ID, null);
         inProgress.start();
+        inProgress.setContainerStatus("INITIALIZING");
         when(service.startInterview(any())).thenReturn(inProgress);
 
         mockMvc.perform(post("/api/v1/interviews/{id}/start", UUID.randomUUID()))
-                .andExpect(status().isOk())
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value(InterviewStatus.IN_PROGRESS.name()))
+                .andExpect(jsonPath("$.containerStatus").value("INITIALIZING"))
                 .andExpect(jsonPath("$.startedAt").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/interviews/{id}/container-status 回傳容器狀態")
+    void shouldReturnContainerStatus() throws Exception {
+        UUID interviewId = UUID.randomUUID();
+        Interview inProgress = Interview.schedule(
+                UUID.randomUUID(), UUID.randomUUID(),
+                "Test", Instant.now().plusSeconds(3600), QUESTION_ID, null);
+        inProgress.start();
+        inProgress.setContainerStatus("READY");
+        when(service.findById(interviewId)).thenReturn(inProgress);
+
+        mockMvc.perform(get("/api/v1/interviews/{id}/container-status", interviewId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.containerReady").value(false));
     }
 
     @Test

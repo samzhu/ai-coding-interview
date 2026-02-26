@@ -23,3 +23,7 @@ databaseChangeLog:
       file: db/changelog/023-alter-question-checkpoint-id-to-varchar.sql
   - include:
       file: db/changelog/024-alter-interviews-add-container-id.sql
+  - include:
+      file: db/changelog/025-alter-interviews-add-container-status.sql
+  - include:
+      file: db/changelog/026-alter-ai-conversations-add-model.sql

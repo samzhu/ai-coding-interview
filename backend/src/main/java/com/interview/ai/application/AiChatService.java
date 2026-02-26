@@ -75,7 +75,7 @@ public class AiChatService {
 
     public record StreamingChatResult(Flux<String> tokenStream, UUID messageId) {}
 
-    public StreamingChatResult streamChat(UUID interviewId, String userMessage) {
+    public StreamingChatResult streamChat(UUID interviewId, String userMessage, String modelIdOverride) {
         if (!aiPolicyProvider.isAiEnabled(interviewId)) {
             throw new AiDisabledException("此階段 AI 不可用，請獨立完成題目");
         }
@@ -90,7 +90,8 @@ public class AiChatService {
 
         UUID assistantMsgId = UUID.randomUUID();
 
-        Optional<ChatClient> chatClient = resolveChatClient(interviewId);
+        String resolvedModelId = resolveModelId(interviewId, modelIdOverride);
+        Optional<ChatClient> chatClient = resolveChatClient(resolvedModelId);
         if (chatClient.isEmpty()) {
             String stub = "AI assistant is not configured for this environment. " +
                     "Set GOOGLE_GENAI_API_KEY to enable AI-powered hints.";
@@ -113,8 +114,9 @@ public class AiChatService {
                 .doOnNext(fullResponse::append)
                 .doOnComplete(() -> {
                     try {
+                        // 記錄本次使用的模型 ID，方便後續分析
                         repository.save(ConversationMessage.create(
-                                interviewId, ConversationRole.ASSISTANT, fullResponse.toString()));
+                                interviewId, ConversationRole.ASSISTANT, fullResponse.toString(), resolvedModelId));
                         eventPublisher.publishEvent(new AiChatMessageEvent(
                                 interviewId, "ASSISTANT", fullResponse.toString()));
                     } catch (Exception e) {
@@ -132,7 +134,7 @@ public class AiChatService {
     }
 
     private String generateResponse(UUID interviewId, List<ConversationMessage> history) {
-        Optional<ChatClient> chatClient = resolveChatClient(interviewId);
+        Optional<ChatClient> chatClient = resolveChatClient(resolveModelId(interviewId, null));
         if (chatClient.isEmpty()) {
             log.warn("No ChatClient available for interview {}. Returning stub response.", interviewId);
             return "AI assistant is not configured for this environment. " +
@@ -157,8 +159,15 @@ public class AiChatService {
         }
     }
 
-    private Optional<ChatClient> resolveChatClient(UUID interviewId) {
-        String modelId = interviewModelProvider.getAiModel(interviewId);
+    private String resolveModelId(UUID interviewId, String modelIdOverride) {
+        // 有 override 時優先使用，否則從 interview 設定取得
+        if (modelIdOverride != null && !modelIdOverride.isBlank()) {
+            return modelIdOverride;
+        }
+        return interviewModelProvider.getAiModel(interviewId);
+    }
+
+    private Optional<ChatClient> resolveChatClient(String modelId) {
         Optional<ChatClient> client = modelRegistry.getChatClient(modelId);
         if (client.isEmpty()) {
             log.warn("Model '{}' not found in registry, trying first available", modelId);

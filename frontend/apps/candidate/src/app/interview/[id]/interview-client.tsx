@@ -12,24 +12,56 @@ import type {
   WorkspaceFileEntry,
   FileContentResponse,
   CheckpointFileState,
+  ContainerStatusResponse,
 } from "@interview/shared/types";
+
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Polls /container-status every 2 seconds until READY or FAILED.
+ * Throws if the container enters FAILED state.
+ */
+async function pollContainerStatus(id: string): Promise<void> {
+  while (true) {
+    const res = await apiGet<ContainerStatusResponse>(
+      `/interviews/${id}/container-status`
+    );
+    if (res.status === "READY") return;
+    if (res.status === "FAILED") {
+      throw new Error("Container initialization failed");
+    }
+    await sleep(2000);
+  }
+}
 
 export function InterviewClient() {
   const id = useRouteParam("/interview/:id", "id");
 
+  interface CheckpointInfo {
+    id: string;
+    title: string;
+    description: string;
+    sequenceNumber: number;
+  }
+
   const [status, setStatus] = useState<InterviewStatus>("IN_PROGRESS");
   const [checkpoint, setCheckpoint] = useState<CheckpointResultResponse | null>(null);
+  const [allCheckpoints, setAllCheckpoints] = useState<CheckpointInfo[]>([]);
   const [initialFiles, setInitialFiles] = useState<Map<string, CheckpointFileState>>(new Map());
   const [title, setTitle] = useState<string>("面試進行中");
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState("載入中...");
   const [notFound, setNotFound] = useState(false);
+  const [containerFailed, setContainerFailed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
 
     async function init() {
       try {
-        // Start or get interview
+        // Step 1: Start or get interview
         let interview: InterviewResponse | null = null;
         try {
           interview = await apiPost<InterviewResponse>(`/interviews/${id}/start`);
@@ -49,9 +81,26 @@ export function InterviewClient() {
         setStatus((interview.status ?? "IN_PROGRESS") as InterviewStatus);
         setTitle(interview.title ?? "面試進行中");
 
-        // Fetch current checkpoint. May not exist if exam.yml was missing at start time
-        // (Task B: interview starts gracefully even without exam.yml, skipping checkpoint init).
-        // In that case, keep cp=null and let the workspace render without a checkpoint task.
+        // Step 2: Wait for container to become READY if it is still initialising.
+        // containerStatus is null when no Docker image is configured — skip polling.
+        if (interview.containerStatus === "FAILED") {
+          setContainerFailed(true);
+          return;
+        }
+
+        if (interview.containerStatus === "INITIALIZING") {
+          setLoadingMessage("正在準備面試環境，請稍候...");
+          try {
+            await pollContainerStatus(id);
+          } catch {
+            setContainerFailed(true);
+            return;
+          }
+        }
+
+        // Step 3: Load checkpoints + workspace files (container is READY or not needed)
+        setLoadingMessage("載入題目中...");
+
         let cp: CheckpointResultResponse | null = null;
         try {
           cp = await apiGet<CheckpointResultResponse>(
@@ -63,7 +112,23 @@ export function InterviewClient() {
 
         setCheckpoint(cp);
 
-        // Fetch initial workspace files from container
+        // 載入全部 checkpoints 供左側 stepper 顯示
+        try {
+          const list = await apiGet<CheckpointResultResponse[]>(
+            `/interviews/${id}/checkpoints`
+          );
+          setAllCheckpoints(
+            list.map((c) => ({
+              id: c.checkpointId,
+              title: c.title,
+              description: c.description,
+              sequenceNumber: c.sequenceNumber,
+            }))
+          );
+        } catch {
+          // 無 checkpoints 時不影響進入工作區
+        }
+
         try {
           const entries = await apiGet<WorkspaceFileEntry[]>(
             `/interviews/${id}/files`
@@ -94,8 +159,9 @@ export function InterviewClient() {
 
   if (loading) {
     return (
-      <div className="flex flex-col h-screen bg-background items-center justify-center">
-        <p className="text-muted-foreground">載入中...</p>
+      <div className="flex flex-col h-screen bg-background items-center justify-center gap-3">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-muted-foreground text-sm">{loadingMessage}</p>
       </div>
     );
   }
@@ -108,12 +174,21 @@ export function InterviewClient() {
     );
   }
 
+  if (containerFailed) {
+    return (
+      <div className="flex flex-col h-screen bg-background items-center justify-center gap-2">
+        <p className="text-destructive font-medium">環境準備失敗</p>
+        <p className="text-muted-foreground text-sm">請聯繫面試官重新安排面試</p>
+      </div>
+    );
+  }
+
   return (
     <InterviewProvider
       interviewId={id}
       initialStatus={status}
       initialCheckpoint={checkpoint}
-      initialCheckpoints={[]}
+      initialCheckpoints={allCheckpoints}
       initialFiles={initialFiles}
     >
       <div className="h-screen overflow-hidden">

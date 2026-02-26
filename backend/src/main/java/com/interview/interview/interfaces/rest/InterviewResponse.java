@@ -17,7 +17,8 @@ public record InterviewResponse(
         Instant scheduledAt,
         Instant startedAt,
         Instant completedAt,
-        Instant createdAt) {
+        Instant createdAt,
+        String containerStatus) {
 
     public static InterviewResponse from(Interview interview) {
         return new InterviewResponse(
@@ -32,6 +33,7 @@ public record InterviewResponse(
                 interview.getScheduledAt(),
                 interview.getStartedAt(),
                 interview.getCompletedAt(),
-                interview.getCreatedAt());
+                interview.getCreatedAt(),
+                interview.getContainerStatus());
     }
 }

@@ -57,6 +57,9 @@ public class Interview {
     @Column("container_id")
     private String containerId;
 
+    @Column("container_status")
+    private String containerStatus;
+
     // Required by Spring Data JDBC
     protected Interview() {
     }
@@ -128,6 +131,11 @@ public class Interview {
         this.updatedAt = Instant.now();
     }
 
+    public void setContainerStatus(String containerStatus) {
+        this.containerStatus = containerStatus;
+        this.updatedAt = Instant.now();
+    }
+
     public InterviewStatus getInterviewStatus() {
         return InterviewStatus.valueOf(this.status);
     }
@@ -146,4 +154,5 @@ public class Interview {
     public String getAiModel() { return aiModel; }
     public int getDurationMinutes() { return durationMinutes; }
     public String getContainerId() { return containerId; }
+    public String getContainerStatus() { return containerStatus; }
 }

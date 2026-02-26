@@ -48,9 +48,18 @@ class InterviewController {
     }
 
     @PostMapping("/{id}/start")
+    @ResponseStatus(HttpStatus.ACCEPTED)   // 202 — container init runs asynchronously
     InterviewResponse startInterview(@PathVariable UUID id) {
         Interview interview = service.startInterview(id);
         return InterviewResponse.from(interview);
+    }
+
+    @GetMapping("/{id}/container-status")
+    ContainerStatusResponse getContainerStatus(@PathVariable UUID id) {
+        Interview interview = service.findById(id);
+        return new ContainerStatusResponse(
+                interview.getContainerStatus(),
+                interview.getContainerId() != null);
     }
 
     @PostMapping("/{id}/complete")

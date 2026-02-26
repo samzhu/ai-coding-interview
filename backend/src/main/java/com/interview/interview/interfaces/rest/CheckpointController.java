@@ -4,6 +4,7 @@ import com.interview.interview.application.CheckpointProgressService;
 import com.interview.interview.application.SubmitCodeCommand;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -14,6 +15,13 @@ class CheckpointController {
 
     CheckpointController(CheckpointProgressService progressService) {
         this.progressService = progressService;
+    }
+
+    @GetMapping
+    List<CheckpointResultResponse> listCheckpoints(@PathVariable UUID interviewId) {
+        return progressService.getAllCheckpoints(interviewId).stream()
+                .map(CheckpointResultResponse::from)
+                .toList();
     }
 
     @GetMapping("/current")

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,6 +67,44 @@ public class CheckpointProgressService {
         var examConfig = examConfigService.getExamConfig(containerId);
         var checkpoint = findCheckpoint(examConfig, result.getCheckpointId());
         return new CheckpointView(result, checkpoint);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CheckpointView> getAllCheckpoints(UUID interviewId) {
+        var interview = interviewRepository.findById(interviewId)
+                .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + interviewId));
+        var results = checkpointResultRepository.findAllByInterviewId(interviewId);
+        if (results.isEmpty()) {
+            return List.of();
+        }
+
+        String containerId = interview.getContainerId();
+        if (containerId == null || containerId.isBlank()) {
+            // 容器尚未建立，直接回傳無標題的 view（graceful degradation）
+            return results.stream()
+                    .sorted(Comparator.comparingInt(CheckpointResult::getCheckpointSequence))
+                    .map(r -> new CheckpointView(r.getCheckpointId(), r.getCheckpointSequence(),
+                            "", "", null, null, r.getStatus(), r.getSubmittedCode(),
+                            r.getExecutionOutput(), r.getPassedAt()))
+                    .toList();
+        }
+
+        var examConfig = examConfigService.getExamConfig(containerId);
+        return results.stream()
+                .sorted(Comparator.comparingInt(CheckpointResult::getCheckpointSequence))
+                .map(r -> {
+                    var cp = examConfig.checkpoints().stream()
+                            .filter(c -> c.id().equals(r.getCheckpointId()))
+                            .findFirst()
+                            .orElse(null);
+                    if (cp == null) {
+                        return new CheckpointView(r.getCheckpointId(), r.getCheckpointSequence(),
+                                "", "", null, null, r.getStatus(), r.getSubmittedCode(),
+                                r.getExecutionOutput(), r.getPassedAt());
+                    }
+                    return new CheckpointView(r, cp);
+                })
+                .toList();
     }
 
     public CheckpointView submitCode(SubmitCodeCommand command) {

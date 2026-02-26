@@ -2,7 +2,7 @@ package com.interview.ai.interfaces.rest;
 
 import java.util.List;
 
-record StreamChatRequest(String id, List<AiSdkMessage> messages) {
+record StreamChatRequest(String id, List<AiSdkMessage> messages, String modelId) {
 
     record AiSdkMessage(String id, String role, List<AiSdkPart> parts) {}
 

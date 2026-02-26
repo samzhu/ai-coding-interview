@@ -51,7 +51,7 @@ class AiChatController {
             writer.flush();
 
             try {
-                AiChatService.StreamingChatResult result = service.streamChat(interviewId, userMessage);
+                AiChatService.StreamingChatResult result = service.streamChat(interviewId, userMessage, request.modelId());
 
                 CountDownLatch latch = new CountDownLatch(1);
                 AtomicReference<Throwable> errorRef = new AtomicReference<>();
