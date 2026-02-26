@@ -22,7 +22,8 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 export function RightPanel({ interviewId, aiEnabled, onClose, onRun, isRunning, onEndInterview }: RightPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("ai");
+  // 預設顯示題目 tab，讓面試者進入後立即看到題目
+  const [activeTab, setActiveTab] = useState<TabId>("question");
 
   return (
     <div className="flex flex-col h-full bg-[#1e1e1e]">

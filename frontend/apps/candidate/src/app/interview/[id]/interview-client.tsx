@@ -39,16 +39,10 @@ async function pollContainerStatus(id: string): Promise<void> {
 export function InterviewClient() {
   const id = useRouteParam("/interview/:id", "id");
 
-  interface CheckpointInfo {
-    id: string;
-    title: string;
-    description: string;
-    sequenceNumber: number;
-  }
-
   const [status, setStatus] = useState<InterviewStatus>("IN_PROGRESS");
   const [checkpoint, setCheckpoint] = useState<CheckpointResultResponse | null>(null);
-  const [allCheckpoints, setAllCheckpoints] = useState<CheckpointInfo[]>([]);
+  // 保留完整 CheckpointResultResponse[]，供 context 的 stepper 做資料驅動狀態判斷
+  const [allCheckpoints, setAllCheckpoints] = useState<CheckpointResultResponse[]>([]);
   const [initialFiles, setInitialFiles] = useState<Map<string, CheckpointFileState>>(new Map());
   const [title, setTitle] = useState<string>("面試進行中");
   const [loading, setLoading] = useState(true);
@@ -117,14 +111,8 @@ export function InterviewClient() {
           const list = await apiGet<CheckpointResultResponse[]>(
             `/interviews/${id}/checkpoints`
           );
-          setAllCheckpoints(
-            list.map((c) => ({
-              id: c.checkpointId,
-              title: c.title,
-              description: c.description,
-              sequenceNumber: c.sequenceNumber,
-            }))
-          );
+          // 直接使用完整資料（含 status），不裁剪欄位，讓 stepper 可以自由跳選
+          setAllCheckpoints(list);
         } catch {
           // 無 checkpoints 時不影響進入工作區
         }

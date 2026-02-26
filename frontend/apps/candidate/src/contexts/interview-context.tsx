@@ -14,18 +14,13 @@ import type {
   ExecutionResponse,
 } from "@interview/shared/types";
 
-interface CheckpointInfo {
-  id: string;
-  title: string;
-  description: string;
-  sequenceNumber: number;
-}
-
 interface InterviewState {
   interviewId: string;
   status: InterviewStatus;
+  // 目前「active」的 checkpoint（使用者正在操作的），隨 switchCheckpoint 切換
   checkpoint: CheckpointResultResponse | null;
-  checkpoints: CheckpointInfo[];
+  // 所有 checkpoint 的完整清單，保留 status 供 stepper 顯示與自由跳選
+  checkpoints: CheckpointResultResponse[];
   aiEnabled: boolean;
   files: Map<string, CheckpointFileState>;
   openFiles: string[];
@@ -38,6 +33,7 @@ interface InterviewState {
 
 type InterviewAction =
   | { type: "SET_CHECKPOINT"; payload: CheckpointResultResponse }
+  | { type: "SWITCH_CHECKPOINT"; payload: string } // payload = checkpointId
   | { type: "SET_CODE"; payload: string }
   | { type: "SET_FILE_CONTENT"; payload: { filePath: string; content: string } }
   | { type: "SET_ACTIVE_FILE"; payload: string }
@@ -68,6 +64,17 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
         ...state,
         checkpoint: action.payload,
         aiEnabled: action.payload.aiEnabled ?? true,
+        lastExecution: null,
+      };
+    }
+    case "SWITCH_CHECKPOINT": {
+      // 從 checkpoints[] 找到目標，切換為 active checkpoint
+      const cp = state.checkpoints.find(c => c.checkpointId === action.payload);
+      if (!cp) return state;
+      return {
+        ...state,
+        checkpoint: cp,
+        aiEnabled: cp.aiEnabled ?? true,
         lastExecution: null,
       };
     }
@@ -162,13 +169,19 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
     case "SET_STATUS":
       return { ...state, status: action.payload };
     case "CHECKPOINT_RESULT": {
+      const { result } = action.payload;
+      // 同步更新 checkpoints[] 中對應 entry 的 status，讓 stepper 可以反映最新狀態
+      const updatedCheckpoints = state.checkpoints.map(c =>
+        c.checkpointId === result.checkpointId ? { ...c, status: result.status } : c
+      );
       return {
         ...state,
         isSubmitting: false,
         isRunning: false,
-        checkpoint: action.payload.result,
-        aiEnabled: action.payload.result.aiEnabled ?? true,
+        checkpoint: result,
+        aiEnabled: result.aiEnabled ?? true,
         lastExecution: action.payload.execution,
+        checkpoints: updatedCheckpoints,
       };
     }
     default:
@@ -184,6 +197,8 @@ interface InterviewContextValue {
   openFile: (filePath: string) => void;
   closeFile: (filePath: string) => void;
   setCheckpoint: (checkpoint: CheckpointResultResponse) => void;
+  // 使用者點擊 stepper 跳選 checkpoint 時呼叫（切換 active checkpoint）
+  switchCheckpoint: (checkpointId: string) => void;
   setSubmitting: (v: boolean) => void;
   setRunning: (v: boolean) => void;
   setExecution: (result: ExecutionResponse) => void;
@@ -201,7 +216,8 @@ interface InterviewProviderProps {
   interviewId: string;
   initialStatus: InterviewStatus;
   initialCheckpoint: CheckpointResultResponse | null;
-  initialCheckpoints: CheckpointInfo[];
+  // 保留完整 CheckpointResultResponse[]，包含 status 供 stepper 資料驅動判斷
+  initialCheckpoints: CheckpointResultResponse[];
   initialFiles: Map<string, CheckpointFileState>;
   children: ReactNode;
 }
@@ -257,6 +273,10 @@ export function InterviewProvider({
     dispatch({ type: "SET_CHECKPOINT", payload: checkpoint });
   }, []);
 
+  const switchCheckpoint = useCallback((checkpointId: string) => {
+    dispatch({ type: "SWITCH_CHECKPOINT", payload: checkpointId });
+  }, []);
+
   const setSubmitting = useCallback((v: boolean) => {
     dispatch({ type: "SET_SUBMITTING", payload: v });
   }, []);
@@ -294,6 +314,7 @@ export function InterviewProvider({
         openFile,
         closeFile,
         setCheckpoint,
+        switchCheckpoint,
         setSubmitting,
         setRunning,
         setExecution,
