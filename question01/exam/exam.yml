@@ -1,9 +1,5 @@
-id: "question1"
-title: "Java Hangman 猜字遊戲"
-language: "java"
-difficulty: "MEDIUM"
-image: "spike19820318/ai-coding-interview-question01:latest"
-workspace: "/workspace"
+# 排除規則：.gitignore 風格 glob，這些檔案不顯示給 candidate
+# exam.yml 本身由 Spring Boot 自動排除，不需列在這裡
 exclude:
   - ".gradle/"
   - "build/"
@@ -13,10 +9,9 @@ exclude:
   - "*.jar"
   - "*.bin"
   - "*.lock"
-description: |
-  你接手了一個 Java Hangman 猜字遊戲專案。前一位工程師留下了有 Bug 的程式碼和未實作的功能。
-  依照 4 張工單依序完成：修復 Bug → 實作提示系統 → 加入難度系統 → 補強輸入驗證。
+  - "PRD.md"
 
+# 關卡定義（按順序）
 checkpoints:
   - id: "1"
     title: "Bug Fix — 修復遊戲邏輯"

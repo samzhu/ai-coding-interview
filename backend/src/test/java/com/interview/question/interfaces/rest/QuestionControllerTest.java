@@ -1,6 +1,5 @@
 package com.interview.question.interfaces.rest;
 
-import com.interview.question.CheckpointDetail;
 import com.interview.question.QuestionDetail;
 import com.interview.question.QuestionService;
 import org.junit.jupiter.api.DisplayName;
@@ -11,7 +10,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -31,7 +29,7 @@ class QuestionControllerTest {
     @DisplayName("GET /api/v1/questions 應回傳題目列表")
     void shouldListQuestions() throws Exception {
         String id = "question1";
-        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(), null);
+        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null);
         when(service.findAllQuestions()).thenReturn(List.of(detail));
 
         mockMvc.perform(get("/api/v1/questions"))
@@ -52,17 +50,15 @@ class QuestionControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/questions/{id} 應回傳題目詳情含 checkpoints")
-    void shouldGetQuestionWithCheckpoints() throws Exception {
+    @DisplayName("GET /api/v1/questions/{id} 應回傳題目詳情")
+    void shouldGetQuestion() throws Exception {
         String id = "question1";
-        String cpId = "1";
-        var cp = new CheckpointDetail(cpId, 1, "Implement", "desc", "// code", null, List.of());
-        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, null, null, List.of(cp), null);
+        var detail = new QuestionDetail(id, "Two Sum", "desc", "EASY", "java", null, null, "some-image:latest");
         when(service.getQuestion(id)).thenReturn(detail);
 
         mockMvc.perform(get("/api/v1/questions/{id}", id))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Two Sum"))
-                .andExpect(jsonPath("$.checkpoints[0].sequenceNumber").value(1));
+                .andExpect(jsonPath("$.difficulty").value("EASY"));
     }
 }

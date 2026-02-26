@@ -12,14 +12,20 @@ import type {
   CheckpointFileState,
   InterviewStatus,
   ExecutionResponse,
-  CheckpointResponse,
 } from "@interview/shared/types";
+
+interface CheckpointInfo {
+  id: string;
+  title: string;
+  description: string;
+  sequenceNumber: number;
+}
 
 interface InterviewState {
   interviewId: string;
   status: InterviewStatus;
   checkpoint: CheckpointResultResponse | null;
-  checkpoints: CheckpointResponse[];
+  checkpoints: CheckpointInfo[];
   aiEnabled: boolean;
   files: Map<string, CheckpointFileState>;
   openFiles: string[];
@@ -195,7 +201,7 @@ interface InterviewProviderProps {
   interviewId: string;
   initialStatus: InterviewStatus;
   initialCheckpoint: CheckpointResultResponse | null;
-  initialCheckpoints: CheckpointResponse[];
+  initialCheckpoints: CheckpointInfo[];
   initialFiles: Map<string, CheckpointFileState>;
   children: ReactNode;
 }

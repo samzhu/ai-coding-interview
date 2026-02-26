@@ -12,6 +12,10 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @TestConfiguration
@@ -83,6 +87,20 @@ public class TestCodeExecutorConfig {
         static void forcePass() { currentMode = Mode.FORCE_PASS; }
         static void forceFail() { currentMode = Mode.FORCE_FAIL; }
 
+        // exam.yml 從 test classpath 載入，確保 checkpoint title 與 feature 檔斷言完全一致
+        // 對應檔案：backend/src/test/resources/test-exam.yml
+        private static final String EXAM_YML_CONTENT = loadTestExamYml();
+
+        private static String loadTestExamYml() {
+            try (InputStream is = TestContainerManager.class
+                    .getClassLoader().getResourceAsStream("test-exam.yml")) {
+                if (is == null) throw new IllegalStateException("test-exam.yml not found on test classpath");
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
         @Override
         public String startContainer(String image, int memoryMb, int cpuCount) {
             return "test-container-" + System.nanoTime();
@@ -105,6 +123,10 @@ public class TestCodeExecutorConfig {
 
         @Override
         public String readFile(String containerId, String path) {
+            // BDD 測試中，凡路徑以 exam.yml 結尾，回傳測試用的 exam config
+            if (path != null && path.endsWith("exam.yml")) {
+                return EXAM_YML_CONTENT;
+            }
             return "";
         }
 

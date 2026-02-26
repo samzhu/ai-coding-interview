@@ -39,8 +39,37 @@ export function CheckpointPanel({ onRun, isRunning, onEndInterview }: Checkpoint
 
   if (checkpoints.length === 0) {
     return (
-      <div className="p-4 text-sm text-[#858585] bg-[#1e1e1e] h-full">
-        載入題目中...
+      <div className="h-full flex flex-col bg-[#1e1e1e]">
+        {/* Stepper — 只顯示虛擬結束節點 */}
+        <div className="px-4 pt-4 pb-3 border-b border-[#333] shrink-0">
+          <div className="flex items-center">
+            <button
+              title="結束測試"
+              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-zinc-500 ring-2 ring-offset-1 ring-offset-[#1e1e1e] ring-zinc-400/60 focus:outline-none"
+            >
+              <span className="text-[13px] text-white leading-none select-none">⏹</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 space-y-3 overflow-y-auto flex-1">
+          <h2 className="font-semibold text-sm text-[#cccccc]">結束測試</h2>
+          <div className="text-sm text-[#cccccc]/80 leading-relaxed">
+            考試內容由面試官確認，您可以隨時結束測試。
+          </div>
+        </div>
+
+        {/* Bottom — 結束測試按鈕，無需通過條件 */}
+        <div className="shrink-0 border-t border-[#333] px-4 py-3 flex justify-end">
+          <Button
+            size="sm"
+            onClick={onEndInterview}
+            className="h-7 text-xs bg-red-600/80 hover:bg-red-600 text-white border-0"
+          >
+            結束測試
+          </Button>
+        </div>
       </div>
     );
   }

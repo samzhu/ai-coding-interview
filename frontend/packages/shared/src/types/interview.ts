@@ -57,5 +57,4 @@ export interface CreateInterviewRequest {
   title: string;
   scheduledAt: string;
   questionId: string;
-  aiModel?: string;
 }

@@ -1,0 +1,8 @@
+id: "question1"
+title: "Java Hangman 猜字遊戲"
+language: "java"
+difficulty: "MEDIUM"
+image: "spike19820318/ai-coding-interview-question01:latest"
+description: |
+  你接手了一個 Java Hangman 猜字遊戲專案。前一位工程師留下了有 Bug 的程式碼和未實作的功能。
+  依照 4 張工單依序完成：修復 Bug → 實作提示系統 → 加入難度系統 → 補強輸入驗證。

@@ -1,6 +1,5 @@
 package com.interview.question.application;
 
-import com.interview.question.CheckpointDetail;
 import com.interview.question.QuestionDetail;
 import jakarta.annotation.PostConstruct;
 import org.springframework.core.io.Resource;
@@ -28,26 +27,9 @@ public class QuestionQueryService {
     @PostConstruct
     void loadQuestions() throws IOException {
         ObjectMapper yamlMapper = YAMLMapper.builder().build();
-        Resource[] yamls = resolver.getResources("classpath:questions/*/question.yml");
+        Resource[] yamls = resolver.getResources("classpath:questions/*.yaml");
         for (Resource yaml : yamls) {
             QuestionDefinition def = yamlMapper.readValue(yaml.getInputStream(), QuestionDefinition.class);
-
-            List<CheckpointDetail> checkpoints = new ArrayList<>();
-            List<QuestionDefinition.CheckpointDef> cpDefs = def.checkpoints();
-            if (cpDefs != null) {
-                for (int i = 0; i < cpDefs.size(); i++) {
-                    QuestionDefinition.CheckpointDef cp = cpDefs.get(i);
-                    checkpoints.add(new CheckpointDetail(
-                            cp.id(),
-                            i + 1,
-                            cp.title(),
-                            cp.description(),
-                            null,
-                            cp.testCommand(),
-                            List.of()));
-                }
-            }
-
             QuestionDetail detail = new QuestionDetail(
                     def.id(),
                     def.title(),
@@ -56,11 +38,7 @@ public class QuestionQueryService {
                     def.language(),
                     def.type(),
                     def.level(),
-                    def.image(),
-                    def.workspace(),
-                    checkpoints,
-                    def.exclude());
-
+                    def.image());
             questions.put(detail.id(), detail);
         }
     }

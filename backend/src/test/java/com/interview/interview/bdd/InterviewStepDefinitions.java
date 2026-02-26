@@ -60,7 +60,7 @@ public class InterviewStepDefinitions {
     @When("I create an interview with title {string} scheduled at {string}")
     public void iCreateAnInterviewWithTitle(String title, String scheduledAt) {
         var command = new CreateInterviewCommand(
-                currentCandidateId, currentInterviewerId, title, Instant.parse(scheduledAt), SEED_QUESTION_ID, null, null);
+                currentCandidateId, currentInterviewerId, title, Instant.parse(scheduledAt), SEED_QUESTION_ID, null);
         Interview interview = service.createInterview(command);
         sharedState.setCurrentInterview(interview);
     }
@@ -80,7 +80,7 @@ public class InterviewStepDefinitions {
     public void iAttemptToCreateAnInterviewWithoutATitle() {
         caughtException = catchThrowable(() -> {
             var command = new CreateInterviewCommand(
-                    currentCandidateId, UUID.randomUUID(), null, Instant.now().plusSeconds(3600), SEED_QUESTION_ID, null, null);
+                    currentCandidateId, UUID.randomUUID(), null, Instant.now().plusSeconds(3600), SEED_QUESTION_ID, null);
             service.createInterview(command);
         });
     }
@@ -100,7 +100,7 @@ public class InterviewStepDefinitions {
     public void anExistingInterviewWithStatus(String status) {
         var command = new CreateInterviewCommand(
                 UUID.randomUUID(), UUID.randomUUID(),
-                "BDD Test Interview", Instant.now().plusSeconds(3600), SEED_QUESTION_ID, null, null);
+                "BDD Test Interview", Instant.now().plusSeconds(3600), SEED_QUESTION_ID, null);
         Interview interview = service.createInterview(command);
 
         if (InterviewStatus.IN_PROGRESS.name().equals(status)) {

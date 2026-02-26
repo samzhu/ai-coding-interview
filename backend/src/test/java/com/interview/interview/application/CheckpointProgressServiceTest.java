@@ -1,12 +1,12 @@
 package com.interview.interview.application;
 
 import com.interview.execution.ContainerService;
+import com.interview.execution.ExamConfigService;
 import com.interview.interview.InterviewExpiredException;
 import com.interview.interview.InterviewTimeProvider;
 import com.interview.interview.domain.Interview;
 import com.interview.interview.infrastructure.persistence.CheckpointResultRepository;
 import com.interview.interview.infrastructure.persistence.InterviewRepository;
-import com.interview.question.QuestionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,10 +35,10 @@ class CheckpointProgressServiceTest {
     private CheckpointResultRepository checkpointResultRepository;
 
     @Mock
-    private QuestionService questionService;
+    private ContainerService containerService;
 
     @Mock
-    private ContainerService containerService;
+    private ExamConfigService examConfigService;
 
     @Mock
     private InterviewService interviewService;

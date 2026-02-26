@@ -9,6 +9,5 @@ public record CreateInterviewCommand(
         String title,
         Instant scheduledAt,
         String questionId,
-        String aiModel,
         Integer durationMinutes) {
 }

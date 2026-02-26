@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@interview/shared/components/ui/button";
 import { Input } from "@interview/shared/components/ui/input";
@@ -20,14 +20,8 @@ import {
   CardTitle,
 } from "@interview/shared/components/ui/card";
 import { InvitationDialog } from "./invitation-dialog";
-import { apiPost, apiGet } from "@interview/shared/lib/api-client";
+import { apiPost } from "@interview/shared/lib/api-client";
 import type { QuestionResponse, InvitationResponse } from "@interview/shared/types";
-
-interface AiModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-}
 
 interface CreateInterviewFormProps {
   questions: QuestionResponse[];
@@ -38,8 +32,6 @@ export function CreateInterviewForm({ questions }: CreateInterviewFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [models, setModels] = useState<AiModelInfo[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(true);
 
   const [form, setForm] = useState({
     title: "",
@@ -47,23 +39,8 @@ export function CreateInterviewForm({ questions }: CreateInterviewFormProps) {
     interviewerId: crypto.randomUUID(),
     questionId: "",
     scheduledAt: new Date(Date.now() + 3600_000).toISOString().slice(0, 16),
-    aiModel: "",
     durationMinutes: "60",
   });
-
-  useEffect(() => {
-    apiGet<AiModelInfo[]>("/ai/models")
-      .then((data) => {
-        setModels(data);
-        if (data.length > 0 && !form.aiModel) {
-          setForm((prev) => ({ ...prev, aiModel: data[0].id }));
-        }
-      })
-      .catch(() => {
-        setModels([]);
-      })
-      .finally(() => setModelsLoading(false));
-  }, []);
 
   function update(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -162,33 +139,6 @@ export function CreateInterviewForm({ questions }: CreateInterviewFormProps) {
                   <SelectItem value="45">45 分鐘</SelectItem>
                   <SelectItem value="60">60 分鐘（預設）</SelectItem>
                   <SelectItem value="90">90 分鐘</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="aiModel">AI 模型</Label>
-              <Select
-                value={form.aiModel}
-                onValueChange={(v) => update("aiModel", v)}
-                disabled={modelsLoading}
-              >
-                <SelectTrigger id="aiModel">
-                  <SelectValue
-                    placeholder={modelsLoading ? "載入模型中..." : "選擇模型"}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                  {models.length === 0 && !modelsLoading && (
-                    <SelectItem value="gemini-2.5-flash" disabled>
-                      無可用模型（請設定 API Key）
-                    </SelectItem>
-                  )}
                 </SelectContent>
               </Select>
             </div>

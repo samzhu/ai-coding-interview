@@ -44,7 +44,7 @@ public class CheckpointProgressStepDefinitions {
     public void anInProgressInterviewWithTheHangmanQuestion() {
         var command = new CreateInterviewCommand(
                 UUID.randomUUID(), UUID.randomUUID(),
-                "Hangman BDD Test", Instant.now().plusSeconds(3600), QUESTION_ID, null, null);
+                "Hangman BDD Test", Instant.now().plusSeconds(3600), QUESTION_ID, null);
         Interview interview = interviewService.createInterview(command);
         interview = interviewService.startInterview(interview.getId());
         sharedState.setCurrentInterview(interview);

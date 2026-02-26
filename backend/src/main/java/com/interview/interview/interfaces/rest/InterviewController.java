@@ -42,7 +42,6 @@ class InterviewController {
                 request.title(),
                 request.scheduledAt(),
                 request.questionId(),
-                request.aiModel(),
                 request.durationMinutes());
         Interview interview = service.createInterview(command);
         return InterviewResponse.from(interview);

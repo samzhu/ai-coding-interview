@@ -30,7 +30,6 @@ export function QuestionListTable({ questions }: QuestionListTableProps) {
             <th className="text-left px-4 py-3 font-medium">標題</th>
             <th className="text-left px-4 py-3 font-medium">難度</th>
             <th className="text-left px-4 py-3 font-medium">語言</th>
-            <th className="text-left px-4 py-3 font-medium">Checkpoint 數</th>
           </tr>
         </thead>
         <tbody>
@@ -43,9 +42,6 @@ export function QuestionListTable({ questions }: QuestionListTableProps) {
                   <Badge className={badge.className}>{badge.label}</Badge>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{question.language}</td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {question.checkpoints.length} 個
-                </td>
               </tr>
             );
           })}

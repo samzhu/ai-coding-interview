@@ -1,6 +1,9 @@
 package com.interview.interview.application;
 
 import com.interview.execution.ContainerService;
+import com.interview.execution.ExamConfig;
+import com.interview.execution.ExamConfigNotFoundException;
+import com.interview.execution.ExamConfigService;
 import com.interview.interview.InterviewStartedEvent;
 import com.interview.interview.domain.CheckpointResult;
 import com.interview.interview.domain.Interview;
@@ -30,17 +33,20 @@ public class InterviewService {
     private final CheckpointResultRepository checkpointResultRepository;
     private final QuestionService questionService;
     private final ContainerService containerService;
+    private final ExamConfigService examConfigService;
 
     public InterviewService(InterviewRepository repository,
                             ApplicationEventPublisher eventPublisher,
                             CheckpointResultRepository checkpointResultRepository,
                             QuestionService questionService,
-                            ContainerService containerService) {
+                            ContainerService containerService,
+                            ExamConfigService examConfigService) {
         this.repository = repository;
         this.eventPublisher = eventPublisher;
         this.checkpointResultRepository = checkpointResultRepository;
         this.questionService = questionService;
         this.containerService = containerService;
+        this.examConfigService = examConfigService;
     }
 
     public Interview createInterview(CreateInterviewCommand command) {
@@ -50,7 +56,7 @@ public class InterviewService {
                 command.title(),
                 command.scheduledAt(),
                 command.questionId(),
-                command.aiModel(),
+                null,
                 command.durationMinutes());
         return repository.save(interview);
     }
@@ -62,9 +68,10 @@ public class InterviewService {
 
         // Start a persistent container for this interview session
         var question = questionService.getQuestion(interview.getQuestionId());
+        String containerId = null;
         if (question.image() != null && !question.image().isBlank()) {
             try {
-                String containerId = containerService.startContainer(question.image());
+                containerId = containerService.startContainer(question.image());
                 interview.assignContainer(containerId);
                 log.info("Started container {} for interview {}", containerId, interviewId);
             } catch (Exception e) {
@@ -74,9 +81,22 @@ public class InterviewService {
 
         Interview saved = repository.save(interview);
 
-        initializeCheckpointResults(saved);
-        eventPublisher.publishEvent(new InterviewStartedEvent(interviewId));
+        // Read exam.yml from container and initialize checkpoints.
+        // If exam.yml is missing, log a warning and skip checkpoint initialization —
+        // the interview still starts so the candidate can access the workspace.
+        if (containerId != null) {
+            try {
+                ExamConfig examConfig = examConfigService.getExamConfig(containerId);
+                initializeCheckpointResults(saved, examConfig);
+            } catch (ExamConfigNotFoundException e) {
+                log.warn("exam.yml not found in container {} for interview {}. "
+                        + "Candidate can still access the workspace. "
+                        + "Interviewer should verify exam content.",
+                        containerId, interviewId);
+            }
+        }
 
+        eventPublisher.publishEvent(new InterviewStartedEvent(interviewId));
         return saved;
     }
 
@@ -141,6 +161,8 @@ public class InterviewService {
             if (containerService.isRunning(containerId)) {
                 return containerId;
             }
+            // Old container is gone — evict its cached exam config
+            examConfigService.evict(containerId);
             log.warn("Container {} is no longer running for interview {}, starting new one", containerId, interviewId);
         }
 
@@ -164,15 +186,17 @@ public class InterviewService {
             } catch (Exception e) {
                 log.warn("Failed to stop container {} for interview {}: {}", containerId, interview.getId(), e.getMessage());
             }
+            // 容器停止後清除 exam config 快取
+            examConfigService.evict(containerId);
         }
     }
 
-    private void initializeCheckpointResults(Interview interview) {
-        var question = questionService.getQuestion(interview.getQuestionId());
-        List<CheckpointResult> pendingResults = question.checkpoints().stream()
-                .map(cp -> CheckpointResult.createPending(
-                        interview.getId(), cp.id(), cp.sequenceNumber()))
-                .toList();
+    private void initializeCheckpointResults(Interview interview, ExamConfig examConfig) {
+        List<ExamConfig.ExamCheckpoint> checkpoints = examConfig.checkpoints();
+        List<CheckpointResult> pendingResults = new java.util.ArrayList<>();
+        for (int i = 0; i < checkpoints.size(); i++) {
+            pendingResults.add(CheckpointResult.createPending(interview.getId(), checkpoints.get(i).id(), i + 1));
+        }
         checkpointResultRepository.saveAll(pendingResults);
     }
 }

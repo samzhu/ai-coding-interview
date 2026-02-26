@@ -46,7 +46,7 @@ class InterviewControllerTest {
 
         var request = new CreateInterviewRequest(
                 UUID.randomUUID(), UUID.randomUUID(),
-                "Java Backend Interview", Instant.now().plusSeconds(3600), QUESTION_ID, null, null);
+                "Java Backend Interview", Instant.now().plusSeconds(3600), QUESTION_ID, null);
 
         mockMvc.perform(post("/api/v1/interviews")
                         .contentType(MediaType.APPLICATION_JSON)

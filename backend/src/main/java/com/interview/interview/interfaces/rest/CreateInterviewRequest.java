@@ -24,8 +24,5 @@ public record CreateInterviewRequest(
         String questionId,
 
         @Nullable
-        String aiModel,
-
-        @Nullable
         Integer durationMinutes) {
 }

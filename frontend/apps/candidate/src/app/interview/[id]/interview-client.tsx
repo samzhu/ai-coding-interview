@@ -9,8 +9,6 @@ import type {
   InterviewResponse,
   InterviewStatus,
   CheckpointResultResponse,
-  CheckpointResponse,
-  QuestionResponse,
   WorkspaceFileEntry,
   FileContentResponse,
   CheckpointFileState,
@@ -22,7 +20,6 @@ export function InterviewClient() {
   const [status, setStatus] = useState<InterviewStatus>("IN_PROGRESS");
   const [checkpoint, setCheckpoint] = useState<CheckpointResultResponse | null>(null);
   const [initialFiles, setInitialFiles] = useState<Map<string, CheckpointFileState>>(new Map());
-  const [allCheckpoints, setAllCheckpoints] = useState<CheckpointResponse[]>([]);
   const [title, setTitle] = useState<string>("面試進行中");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -44,37 +41,27 @@ export function InterviewClient() {
           }
         }
 
-        // Fetch current checkpoint
+        if (!interview) {
+          setNotFound(true);
+          return;
+        }
+
+        setStatus((interview.status ?? "IN_PROGRESS") as InterviewStatus);
+        setTitle(interview.title ?? "面試進行中");
+
+        // Fetch current checkpoint. May not exist if exam.yml was missing at start time
+        // (Task B: interview starts gracefully even without exam.yml, skipping checkpoint init).
+        // In that case, keep cp=null and let the workspace render without a checkpoint task.
         let cp: CheckpointResultResponse | null = null;
         try {
           cp = await apiGet<CheckpointResultResponse>(
             `/interviews/${id}/checkpoints/current`
           );
         } catch {
-          setNotFound(true);
-          return;
-        }
-
-        if (!cp) {
-          setNotFound(true);
-          return;
+          // No checkpoints configured yet — continue and show workspace
         }
 
         setCheckpoint(cp);
-        setStatus((interview?.status ?? "IN_PROGRESS") as InterviewStatus);
-        setTitle(interview?.title ?? "面試進行中");
-
-        // Fetch question for checkpoints list
-        if (interview?.questionId) {
-          try {
-            const q = await apiGet<QuestionResponse>(
-              `/questions/${interview.questionId}`
-            );
-            setAllCheckpoints(q.checkpoints ?? []);
-          } catch {
-            // use defaults
-          }
-        }
 
         // Fetch initial workspace files from container
         try {
@@ -113,10 +100,10 @@ export function InterviewClient() {
     );
   }
 
-  if (notFound || !checkpoint) {
+  if (notFound) {
     return (
       <div className="flex flex-col h-screen bg-background items-center justify-center">
-        <p className="text-muted-foreground">找不到面試或 Checkpoint</p>
+        <p className="text-muted-foreground">找不到面試</p>
       </div>
     );
   }
@@ -126,7 +113,7 @@ export function InterviewClient() {
       interviewId={id}
       initialStatus={status}
       initialCheckpoint={checkpoint}
-      initialCheckpoints={allCheckpoints}
+      initialCheckpoints={[]}
       initialFiles={initialFiles}
     >
       <div className="h-screen overflow-hidden">

@@ -1,7 +1,5 @@
 package com.interview.question;
 
-import java.util.List;
-
 public record QuestionDetail(
         String id,
         String title,
@@ -10,8 +8,5 @@ public record QuestionDetail(
         String language,
         String type,
         String level,
-        String image,
-        String workspace,
-        List<CheckpointDetail> checkpoints,
-        List<String> exclude) {
+        String image) {
 }
