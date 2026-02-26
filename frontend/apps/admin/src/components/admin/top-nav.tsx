@@ -8,6 +8,7 @@ const navLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/interviews", label: "Interviews" },
   { href: "/questions", label: "Questions" },
+  { href: "/guide", label: "Guide" },
 ];
 
 export function TopNav() {

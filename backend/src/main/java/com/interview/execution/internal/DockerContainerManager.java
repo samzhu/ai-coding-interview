@@ -65,7 +65,6 @@ class DockerContainerManager implements ContainerManager {
         pullImageIfAbsent(image);
 
         HostConfig hostConfig = HostConfig.newHostConfig()
-                .withNetworkMode("none")
                 .withMemory((long) memoryMb * 1024 * 1024)
                 .withCpuCount((long) cpuCount);
 

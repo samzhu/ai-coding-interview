@@ -135,7 +135,7 @@ public class CheckpointProgressService {
         checkpointResultRepository.save(result);
 
         String fullCommand = "cd " + examConfig.effectiveWorkspace() + " && " + checkpoint.testCommand();
-        var execResult = containerService.execCommand(containerId, fullCommand, 60);
+        var execResult = containerService.execCommand(containerId, fullCommand, 300);
 
         String output = formatOutput(execResult.stdout(), execResult.stderr(), execResult.exitCode());
 
@@ -175,7 +175,7 @@ public class CheckpointProgressService {
         var checkpoint = findCheckpoint(examConfig, checkpointId);
 
         String fullCommand = "cd " + examConfig.effectiveWorkspace() + " && " + checkpoint.testCommand();
-        var execResult = containerService.execCommand(containerId, fullCommand, 60);
+        var execResult = containerService.execCommand(containerId, fullCommand, 300);
         String output = formatOutput(execResult.stdout(), execResult.stderr(), execResult.exitCode());
 
         return new CheckpointView(

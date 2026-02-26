@@ -72,7 +72,6 @@ class DockerCodeExecutor implements CodeExecutor {
             }
 
             HostConfig hostConfig = HostConfig.newHostConfig()
-                    .withNetworkMode("none")
                     .withMemory(128 * 1024 * 1024L)
                     .withCpuCount(1L)
                     .withTmpFs(Map.of("/tmp", "rw,nosuid,size=64m"));
@@ -124,7 +123,6 @@ class DockerCodeExecutor implements CodeExecutor {
             String runCmd = "cp -r /code/. /tmp/workspace/ && cd /tmp/workspace && " + request.testCommand();
 
             HostConfig hostConfig = HostConfig.newHostConfig()
-                    .withNetworkMode("none")
                     .withMemory(256 * 1024 * 1024L)
                     .withCpuCount(1L)
                     .withTmpFs(Map.of("/tmp", "rw,nosuid,size=128m"));
