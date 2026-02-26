@@ -15,24 +15,24 @@ export function CompleteClient() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="max-w-md w-full text-center">
+      <Card className="max-w-md w-full text-center border-t-2 border-t-emerald-400">
         <CardHeader>
           <div className="flex justify-center mb-4">
-            <Badge variant="secondary" className="text-lg px-4 py-2">
+            <Badge className="bg-emerald-500/15 text-emerald-400 border-0 text-lg px-4 py-2">
               面試完成
             </Badge>
           </div>
-          <CardTitle className="text-2xl">恭喜完成面試！</CardTitle>
+          <CardTitle className="text-2xl">測試已完成，感謝您的時間</CardTitle>
           <CardDescription>
-            您已完成所有程式挑戰。面試官將在審閱後與您聯絡。
+            我們已收到您的作答。後續結果將由面試官審閱後通知您。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            面試 ID：<span className="font-mono">{id}</span>
+            參考編號：<span className="font-mono">{id}</span>
           </p>
           <p className="text-sm text-muted-foreground">
-            您可以關閉此頁面。
+            您現在可以安全地關閉此頁面。
           </p>
         </CardContent>
       </Card>

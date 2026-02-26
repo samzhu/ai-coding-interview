@@ -12,14 +12,11 @@ interface InterviewListTableProps {
   interviews: InterviewResponse[];
 }
 
-const STATUS_BADGE: Record<
-  InterviewStatus,
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
-> = {
-  SCHEDULED: { label: "已排程", variant: "default" },
-  IN_PROGRESS: { label: "進行中", variant: "secondary" },
-  COMPLETED: { label: "已完成", variant: "outline" },
-  CANCELLED: { label: "已取消", variant: "destructive" },
+const STATUS_BADGE: Record<InterviewStatus, { label: string; className: string }> = {
+  SCHEDULED:   { label: "已排程", className: "bg-blue-500/15 text-blue-400 border-0" },
+  IN_PROGRESS: { label: "進行中", className: "bg-amber-500/15 text-amber-400 border-0" },
+  COMPLETED:   { label: "已完成", className: "bg-emerald-500/15 text-emerald-400 border-0" },
+  CANCELLED:   { label: "已取消", className: "bg-red-500/15 text-red-400 border-0" },
 };
 
 function formatDate(iso: string) {
@@ -85,7 +82,7 @@ export function InterviewListTable({ interviews }: InterviewListTableProps) {
                 <tr key={interview.id} className="border-t hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium">{interview.title}</td>
                   <td className="px-4 py-3">
-                    <Badge variant={badge.variant}>{badge.label}</Badge>
+                    <Badge className={badge.className}>{badge.label}</Badge>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {interview.aiModel ?? "—"}

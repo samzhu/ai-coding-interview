@@ -13,9 +13,9 @@ interface MonitorCheckpointProgressProps {
 }
 
 const STATUS_CONFIG = {
-  PENDING: { label: "等待中", variant: "outline" as const },
-  PASSED: { label: "通過", variant: "default" as const },
-  FAILED: { label: "失敗", variant: "destructive" as const },
+  PENDING: { label: "等待中", className: "bg-muted/50 text-muted-foreground border-0" },
+  PASSED:  { label: "通過",   className: "bg-emerald-500/15 text-emerald-400 border-0" },
+  FAILED:  { label: "失敗",   className: "bg-red-500/15 text-red-400 border-0" },
 };
 
 export function MonitorCheckpointProgress({
@@ -41,7 +41,7 @@ export function MonitorCheckpointProgress({
             <span className="text-sm font-medium">
               Checkpoint {cp.sequenceNumber}
             </span>
-            <Badge variant={config.variant}>{config.label}</Badge>
+            <Badge className={config.className}>{config.label}</Badge>
           </div>
         );
       })}

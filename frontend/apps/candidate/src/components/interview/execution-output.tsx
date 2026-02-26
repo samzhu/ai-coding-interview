@@ -4,9 +4,11 @@ import { useInterview } from "@/contexts/interview-context";
 
 interface ExecutionOutputProps {
   onClose: () => void;
+  height: number;
+  onResizeMouseDown: (e: React.MouseEvent) => void;
 }
 
-export function ExecutionOutput({ onClose }: ExecutionOutputProps) {
+export function ExecutionOutput({ onClose, height, onResizeMouseDown }: ExecutionOutputProps) {
   const { state } = useInterview();
   const { checkpoint, lastExecution } = state;
 
@@ -15,9 +17,18 @@ export function ExecutionOutput({ onClose }: ExecutionOutputProps) {
   const status = checkpoint?.status;
 
   return (
+    <>
+      {/* 垂直拖拉把手：5px 高，hover 顯示藍色橫線 */}
+      <div
+        className="relative h-[5px] shrink-0 group cursor-row-resize z-10"
+        onMouseDown={onResizeMouseDown}
+      >
+        <div className="absolute inset-x-0 top-[2px] h-[1px] bg-transparent group-hover:bg-[#007acc] transition-colors duration-100" />
+      </div>
+
     <div
       className="flex flex-col border-t border-[#333] bg-[#1e1e1e] shrink-0"
-      style={{ height: "192px" }}
+      style={{ height }}
     >
       {/* Header bar */}
       <div className="flex items-center px-3 py-1 bg-[#252526] border-b border-[#333] shrink-0">
@@ -75,5 +86,6 @@ export function ExecutionOutput({ onClose }: ExecutionOutputProps) {
         )}
       </div>
     </div>
+    </>
   );
 }

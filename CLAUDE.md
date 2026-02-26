@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 你上網查證一下比在那邊試要快
-要習慣紀錄問題跟解法, 或是為什麼考慮這樣處理
+要習慣紀錄問題跟解法, 或是為什麼考慮這樣處理, 可以寫在註解上
 
 ## Project Structure
 

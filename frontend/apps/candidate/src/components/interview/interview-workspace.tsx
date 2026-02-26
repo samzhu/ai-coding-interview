@@ -15,6 +15,7 @@ import { useCodeSubmission } from "@/hooks/use-code-submission";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { useWorkspaceFiles } from "@/hooks/use-workspace-files";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { useResizableHeight } from "@/hooks/use-resizable-height";
 
 interface InterviewWorkspaceProps {
   interviewId: string;
@@ -33,6 +34,7 @@ export function InterviewWorkspace({
   const { saveFileDebounced } = useWorkspaceFiles(interviewId);
   const explorerResize = useResizablePanel({ initialWidth: 180, minWidth: 120, maxWidth: 480 });
   const rightPanelResize = useResizablePanel({ initialWidth: 320, minWidth: 240, maxWidth: 600, reversed: true });
+  const terminalResize = useResizableHeight({ initialHeight: 192, minHeight: 100, maxHeight: 500 });
 
   const handleExpired = useCallback(async () => {
     try {
@@ -136,7 +138,13 @@ export function InterviewWorkspace({
           </div>
 
           {/* Terminal: completely hidden or fully shown (VS Code style) */}
-          {layout.terminal && <ExecutionOutput onClose={toggleTerminal} />}
+          {layout.terminal && (
+            <ExecutionOutput
+              onClose={toggleTerminal}
+              height={terminalResize.height}
+              onResizeMouseDown={terminalResize.onMouseDown}
+            />
+          )}
         </div>
 
         {/* Right: Info Panel (full height, collapsible, resizable) */}

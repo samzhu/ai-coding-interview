@@ -166,24 +166,24 @@ export function MonitorClient() {
             {interview?.title ?? "面試監控"}
           </h1>
           {interview && (
-            <Badge
-              variant={
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                 interview.status === "IN_PROGRESS"
-                  ? "secondary"
+                  ? "bg-amber-500/15 text-amber-400"
                   : interview.status === "COMPLETED"
-                  ? "outline"
-                  : "default"
-              }
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : "bg-blue-500/15 text-blue-400"
+              }`}
             >
               {interview.status === "IN_PROGRESS"
                 ? "進行中"
                 : interview.status === "COMPLETED"
                 ? "已完成"
                 : interview.status}
-            </Badge>
+            </span>
           )}
           {isCompleted && (
-            <Badge variant="outline" className="text-green-600">
+            <Badge variant="outline" className="text-emerald-400 border-emerald-400/30">
               面試已結束
             </Badge>
           )}

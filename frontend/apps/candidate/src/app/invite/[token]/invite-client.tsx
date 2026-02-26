@@ -39,7 +39,7 @@ export function InviteClient() {
   if (notFound || !invitation) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
+        <Card className="max-w-md w-full border-t-2 border-t-primary">
           <CardHeader>
             <CardTitle>邀請連結無效</CardTitle>
             <CardDescription>找不到此邀請連結，請確認連結是否正確。</CardDescription>
@@ -55,7 +55,7 @@ export function InviteClient() {
   if (isExpired) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
+        <Card className="max-w-md w-full border-t-2 border-t-primary">
           <CardHeader>
             <CardTitle>邀請連結已過期</CardTitle>
             <CardDescription>請聯絡面試官重新產生邀請連結。</CardDescription>
@@ -67,10 +67,10 @@ export function InviteClient() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="max-w-md w-full">
+      <Card className="max-w-md w-full border-t-2 border-t-primary">
         <CardHeader>
           <div className="flex items-center gap-2 mb-2">
-            <Badge variant="secondary">面試邀請</Badge>
+            <Badge className="bg-blue-500/15 text-blue-400 border-0">面試邀請</Badge>
           </div>
           <CardTitle>您已受邀參加程式面試</CardTitle>
           <CardDescription>
