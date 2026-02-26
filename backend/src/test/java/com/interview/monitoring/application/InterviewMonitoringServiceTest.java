@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.UUID;
@@ -67,7 +68,7 @@ class InterviewMonitoringServiceTest {
     @DisplayName("onAiChatMessage USER 角色不拋出例外")
     void onAiChatMessageUserShouldNotThrow() {
         UUID interviewId = UUID.randomUUID();
-        AiChatMessageEvent event = new AiChatMessageEvent(interviewId, "USER", "Hello?");
+        AiChatMessageEvent event = new AiChatMessageEvent(interviewId, MessageType.USER, "Hello?");
 
         service.onAiChatMessage(event);
     }
@@ -76,7 +77,7 @@ class InterviewMonitoringServiceTest {
     @DisplayName("onAiChatMessage ASSISTANT 角色不拋出例外")
     void onAiChatMessageAssistantShouldNotThrow() {
         UUID interviewId = UUID.randomUUID();
-        AiChatMessageEvent event = new AiChatMessageEvent(interviewId, "ASSISTANT", "Think about hash maps.");
+        AiChatMessageEvent event = new AiChatMessageEvent(interviewId, MessageType.ASSISTANT, "Think about hash maps.");
 
         service.onAiChatMessage(event);
     }

@@ -5,6 +5,7 @@ import com.interview.interview.CodeSubmittedEvent;
 import com.interview.interview.InterviewCompletedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -60,10 +61,11 @@ public class InterviewMonitoringService {
 
     @EventListener
     public void onAiChatMessage(AiChatMessageEvent event) {
-        String eventType = "USER".equals(event.role()) ? "ai-prompt-sent" : "ai-response-received";
+        // 使用 MessageType enum 比對，比字串比對更安全
+        String eventType = MessageType.USER == event.role() ? "ai-prompt-sent" : "ai-response-received";
         Map<String, Object> data = Map.of(
                 "type", eventType,
-                "role", event.role(),
+                "role", event.role().name(),  // 轉為字串以符合前端期望格式
                 "content", event.content()
         );
         broadcast(event.interviewId(), eventType, data);

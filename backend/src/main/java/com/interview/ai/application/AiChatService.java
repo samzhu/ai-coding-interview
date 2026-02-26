@@ -2,7 +2,6 @@ package com.interview.ai.application;
 
 import com.interview.ai.AiChatMessageEvent;
 import com.interview.ai.domain.ConversationMessage;
-import com.interview.ai.domain.ConversationRole;
 import com.interview.ai.infrastructure.persistence.ConversationMessageRepository;
 import com.interview.ai.internal.AiModelRegistry;
 import com.interview.interview.InterviewAiPolicyProvider;
@@ -12,9 +11,10 @@ import com.interview.interview.InterviewTimeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -32,6 +33,9 @@ public class AiChatService {
 
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
 
+    // ChatMemory 用於 AI 對話上下文管理（歷史寫入 + 讀取），底層使用 ConversationChatMemoryRepository
+    private final ChatMemory chatMemory;
+    // 直接使用 Repository 是為了 getHistory() API 回傳需要 id、createdAt 等 DB 欄位
     private final ConversationMessageRepository repository;
     private final AiModelRegistry modelRegistry;
     private final InterviewModelProvider interviewModelProvider;
@@ -40,12 +44,14 @@ public class AiChatService {
     private final ApplicationEventPublisher eventPublisher;
 
     public AiChatService(ConversationMessageRepository repository,
+                         ChatMemory chatMemory,
                          AiModelRegistry modelRegistry,
                          InterviewModelProvider interviewModelProvider,
                          InterviewAiPolicyProvider aiPolicyProvider,
                          InterviewTimeProvider interviewTimeProvider,
                          ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
+        this.chatMemory = chatMemory;
         this.modelRegistry = modelRegistry;
         this.interviewModelProvider = interviewModelProvider;
         this.aiPolicyProvider = aiPolicyProvider;
@@ -60,17 +66,24 @@ public class AiChatService {
         if (interviewTimeProvider.isExpired(interviewId)) {
             throw new InterviewExpiredException("面試時間已到，無法使用 AI");
         }
-        ConversationMessage userMsg = ConversationMessage.create(interviewId, ConversationRole.USER, userMessage);
-        repository.save(userMsg);
-        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, "USER", userMessage));
 
-        List<ConversationMessage> history = repository.findByInterviewIdOrderByCreatedAtAsc(interviewId);
-        String response = generateResponse(interviewId, history);
+        String conversationId = interviewId.toString();
 
-        ConversationMessage assistantMsg = ConversationMessage.create(interviewId, ConversationRole.ASSISTANT, response);
-        ConversationMessage saved = repository.save(assistantMsg);
-        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, "ASSISTANT", response));
-        return saved;
+        // 將用戶訊息存入記憶（透過 ConversationChatMemoryRepository 寫入 DB）
+        chatMemory.add(conversationId, new UserMessage(userMessage));
+        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.USER, userMessage));
+
+        // 從記憶取得完整歷史（含 SYSTEM prompt），透過 ChatClient 呼叫 AI
+        List<Message> history = chatMemory.get(conversationId);
+        String response = generateResponseFromHistory(interviewId, history);
+
+        // 將 AI 回覆存入記憶
+        chatMemory.add(conversationId, new AssistantMessage(response));
+        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.ASSISTANT, response));
+
+        // 回傳最後儲存的 ConversationMessage（含 id/createdAt），供 REST 回應使用
+        List<ConversationMessage> allMessages = repository.findByInterviewIdOrderByCreatedAtAsc(interviewId);
+        return allMessages.getLast();
     }
 
     public record StreamingChatResult(Flux<String> tokenStream, UUID messageId) {}
@@ -82,25 +95,33 @@ public class AiChatService {
         if (interviewTimeProvider.isExpired(interviewId)) {
             throw new InterviewExpiredException("面試時間已到，無法使用 AI");
         }
-        ConversationMessage userMsg = ConversationMessage.create(interviewId, ConversationRole.USER, userMessage);
-        repository.save(userMsg);
-        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, "USER", userMessage));
 
-        List<ConversationMessage> history = repository.findByInterviewIdOrderByCreatedAtAsc(interviewId);
+        String conversationId = interviewId.toString();
+
+        // 將用戶訊息存入記憶
+        chatMemory.add(conversationId, new UserMessage(userMessage));
+        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.USER, userMessage));
 
         UUID assistantMsgId = UUID.randomUUID();
-
         String resolvedModelId = resolveModelId(interviewId, modelIdOverride);
         Optional<ChatClient> chatClient = resolveChatClient(resolvedModelId);
+
         if (chatClient.isEmpty()) {
             String stub = "AI assistant is not configured for this environment. " +
                     "Set GOOGLE_GENAI_API_KEY to enable AI-powered hints.";
-            repository.save(ConversationMessage.create(interviewId, ConversationRole.ASSISTANT, stub));
+            chatMemory.add(conversationId, new AssistantMessage(stub));
             return new StreamingChatResult(Flux.just(stub), assistantMsgId);
         }
 
-        String systemPrompt = extractSystemPrompt(history);
-        List<Message> conversationMessages = extractConversationMessages(history);
+        // 從記憶取得完整歷史，分離 SYSTEM prompt 和對話訊息
+        List<Message> history = chatMemory.get(conversationId);
+        String systemPrompt = history.stream()
+                .filter(m -> m.getMessageType() == MessageType.SYSTEM)
+                .map(Message::getText)
+                .collect(Collectors.joining("\n"));
+        List<Message> conversationMessages = history.stream()
+                .filter(m -> m.getMessageType() != MessageType.SYSTEM)
+                .toList();
 
         StringBuilder fullResponse = new StringBuilder();
         var promptSpec = chatClient.get().prompt();
@@ -114,11 +135,14 @@ public class AiChatService {
                 .doOnNext(fullResponse::append)
                 .doOnComplete(() -> {
                     try {
-                        // 記錄本次使用的模型 ID，方便後續分析
-                        repository.save(ConversationMessage.create(
-                                interviewId, ConversationRole.ASSISTANT, fullResponse.toString(), resolvedModelId));
+                        // 串流完成後儲存 assistant 回覆，properties 帶 model ID 供後續分析使用
+                        // AssistantMessage 使用 builder()，因為帶 metadata 的 4-arg constructor 是 protected
+                        chatMemory.add(conversationId, AssistantMessage.builder()
+                                .content(fullResponse.toString())
+                                .properties(Map.of("model", resolvedModelId))
+                                .build());
                         eventPublisher.publishEvent(new AiChatMessageEvent(
-                                interviewId, "ASSISTANT", fullResponse.toString()));
+                                interviewId, MessageType.ASSISTANT, fullResponse.toString()));
                     } catch (Exception e) {
                         log.error("Failed to save assistant message after streaming", e);
                     }
@@ -130,10 +154,11 @@ public class AiChatService {
 
     @Transactional(readOnly = true)
     public List<ConversationMessage> getHistory(UUID interviewId) {
+        // 直接查詢 repository 而非透過 ChatMemory，因為 API 回傳需要 id、createdAt 等 DB 欄位
         return repository.findByInterviewIdOrderByCreatedAtAsc(interviewId);
     }
 
-    private String generateResponse(UUID interviewId, List<ConversationMessage> history) {
+    private String generateResponseFromHistory(UUID interviewId, List<Message> history) {
         Optional<ChatClient> chatClient = resolveChatClient(resolveModelId(interviewId, null));
         if (chatClient.isEmpty()) {
             log.warn("No ChatClient available for interview {}. Returning stub response.", interviewId);
@@ -142,8 +167,14 @@ public class AiChatService {
         }
 
         try {
-            String systemPrompt = extractSystemPrompt(history);
-            List<Message> conversationMessages = extractConversationMessages(history);
+            // 分離 SYSTEM prompt 和對話訊息（ChatClient API 需要分開傳入）
+            String systemPrompt = history.stream()
+                    .filter(m -> m.getMessageType() == MessageType.SYSTEM)
+                    .map(Message::getText)
+                    .collect(Collectors.joining("\n"));
+            List<Message> conversationMessages = history.stream()
+                    .filter(m -> m.getMessageType() != MessageType.SYSTEM)
+                    .toList();
 
             var promptSpec = chatClient.get().prompt();
             if (!systemPrompt.isEmpty()) {
@@ -174,27 +205,5 @@ public class AiChatService {
             return modelRegistry.getFirstClient();
         }
         return client;
-    }
-
-    private String extractSystemPrompt(List<ConversationMessage> history) {
-        return history.stream()
-                .filter(m -> m.getConversationRole() == ConversationRole.SYSTEM)
-                .map(ConversationMessage::getContent)
-                .collect(Collectors.joining("\n"));
-    }
-
-    private List<Message> extractConversationMessages(List<ConversationMessage> history) {
-        return history.stream()
-                .filter(m -> m.getConversationRole() != ConversationRole.SYSTEM)
-                .map(this::toSpringAiMessage)
-                .toList();
-    }
-
-    private Message toSpringAiMessage(ConversationMessage msg) {
-        return switch (msg.getConversationRole()) {
-            case SYSTEM -> new SystemMessage(msg.getContent());
-            case USER -> new UserMessage(msg.getContent());
-            case ASSISTANT -> new AssistantMessage(msg.getContent());
-        };
     }
 }

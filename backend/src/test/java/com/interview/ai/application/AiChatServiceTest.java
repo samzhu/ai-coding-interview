@@ -1,7 +1,6 @@
 package com.interview.ai.application;
 
 import com.interview.ai.domain.ConversationMessage;
-import com.interview.ai.domain.ConversationRole;
 import com.interview.ai.infrastructure.persistence.ConversationMessageRepository;
 import com.interview.ai.internal.AiModelRegistry;
 import com.interview.interview.InterviewAiPolicyProvider;
@@ -15,6 +14,10 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.context.ApplicationEventPublisher;
 import reactor.core.publisher.Flux;
 
@@ -26,6 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +39,9 @@ class AiChatServiceTest {
 
     @Mock
     private ConversationMessageRepository repository;
+
+    @Mock
+    private ChatMemory chatMemory;
 
     @Mock
     private AiModelRegistry modelRegistry;
@@ -50,8 +58,13 @@ class AiChatServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    private AiChatService buildService() {
+        return new AiChatService(repository, chatMemory, modelRegistry,
+                interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+    }
+
     @Test
-    @DisplayName("chat 應儲存用戶訊息並回傳 AI 回覆")
+    @DisplayName("chat 應存入用戶訊息並回傳 AI 回覆")
     void shouldSaveUserMessageAndReturnAiResponse() {
         UUID interviewId = UUID.randomUUID();
 
@@ -62,16 +75,20 @@ class AiChatServiceTest {
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
 
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        // chatMemory.get() 回傳空歷史（無 SYSTEM prompt），對話訊息為空
+        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
 
-        when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of());
-        ConversationMessage saved = ConversationMessage.create(interviewId, ConversationRole.ASSISTANT, "Think about using a hash map.");
-        when(repository.save(any())).thenReturn(saved);
+        // 最後查詢 repository 以取得含 id/createdAt 的回傳物件
+        ConversationMessage assistantMsg = ConversationMessage.create(
+                interviewId, MessageType.ASSISTANT, "Think about using a hash map.");
+        when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(assistantMsg));
 
+        AiChatService service = buildService();
         ConversationMessage result = service.chat(interviewId, "How do I solve Two Sum?");
 
         assertThat(result.getRole()).isEqualTo("ASSISTANT");
-        verify(repository, times(2)).save(any(ConversationMessage.class));
+        // 驗證 chatMemory.add() 被呼叫了 2 次（user + assistant）
+        verify(chatMemory, times(2)).add(eq(interviewId.toString()), any(Message.class));
     }
 
     @Test
@@ -83,15 +100,13 @@ class AiChatServiceTest {
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.empty());
         when(modelRegistry.getFirstClient()).thenReturn(Optional.empty());
 
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
 
-        ConversationMessage userMsg = ConversationMessage.create(interviewId, ConversationRole.USER, "Hello");
-        ConversationMessage stubMsg = ConversationMessage.create(interviewId, ConversationRole.ASSISTANT,
+        ConversationMessage assistantMsg = ConversationMessage.create(interviewId, MessageType.ASSISTANT,
                 "AI assistant is not configured for this environment. Set GOOGLE_GENAI_API_KEY to enable AI-powered hints.");
+        when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(assistantMsg));
 
-        when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(userMsg));
-        when(repository.save(any())).thenReturn(stubMsg);
-
+        AiChatService service = buildService();
         ConversationMessage result = service.chat(interviewId, "Hello");
 
         assertThat(result.getRole()).isEqualTo("ASSISTANT");
@@ -101,9 +116,9 @@ class AiChatServiceTest {
     @DisplayName("getHistory 應回傳對話歷史")
     void shouldReturnConversationHistory() {
         UUID interviewId = UUID.randomUUID();
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        AiChatService service = buildService();
 
-        var msg = ConversationMessage.create(interviewId, ConversationRole.USER, "Hello");
+        var msg = ConversationMessage.create(interviewId, MessageType.USER, "Hello");
         when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(msg));
 
         var history = service.getHistory(interviewId);
@@ -124,13 +139,10 @@ class AiChatServiceTest {
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
 
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        // chatMemory.get() 回傳空歷史（無 SYSTEM prompt）
+        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
 
-        ConversationMessage userMsg = ConversationMessage.create(interviewId, ConversationRole.USER, "Any hints?");
-        ConversationMessage savedMsg = ConversationMessage.create(interviewId, ConversationRole.ASSISTANT, "Hello World");
-        when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(userMsg));
-        when(repository.save(any())).thenReturn(savedMsg);
-
+        AiChatService service = buildService();
         var result = service.streamChat(interviewId, "Any hints?", null);
 
         assertThat(result.messageId()).isNotNull();
@@ -138,8 +150,11 @@ class AiChatServiceTest {
         List<String> tokens = result.tokenStream().collectList().block();
         assertThat(tokens).containsExactly("Hello", " World");
 
-        verify(repository, atLeastOnce()).save(argThat(msg ->
-                msg.getRole().equals("ASSISTANT") && msg.getContent().equals("Hello World")));
+        // 驗證 doOnComplete 後 chatMemory.add() 被呼叫（存入 assistant 回覆）
+        // 明確指定 Message 型別避免 ChatMemory.add(String, Message) 與 add(String, List) 歧義
+        verify(chatMemory, atLeastOnce()).add(eq(interviewId.toString()),
+                (Message) argThat(msg -> msg instanceof AssistantMessage am
+                        && am.getText().equals("Hello World")));
     }
 
     @Test
@@ -147,7 +162,7 @@ class AiChatServiceTest {
     void shouldThrowWhenAiDisabledForChat() {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(false);
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        AiChatService service = buildService();
 
         assertThatThrownBy(() -> service.chat(interviewId, "Give me a hint"))
                 .isInstanceOf(AiDisabledException.class)
@@ -159,7 +174,7 @@ class AiChatServiceTest {
     void shouldThrowWhenAiDisabledForStreamChat() {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(false);
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        AiChatService service = buildService();
 
         assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null))
                 .isInstanceOf(AiDisabledException.class)
@@ -172,7 +187,7 @@ class AiChatServiceTest {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        AiChatService service = buildService();
 
         assertThatThrownBy(() -> service.chat(interviewId, "Give me a hint"))
                 .isInstanceOf(InterviewExpiredException.class)
@@ -185,7 +200,7 @@ class AiChatServiceTest {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+        AiChatService service = buildService();
 
         assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null))
                 .isInstanceOf(InterviewExpiredException.class)
@@ -201,13 +216,7 @@ class AiChatServiceTest {
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.empty());
         when(modelRegistry.getFirstClient()).thenReturn(Optional.empty());
 
-        AiChatService service = new AiChatService(repository, modelRegistry, interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
-
-        ConversationMessage userMsg = ConversationMessage.create(interviewId, ConversationRole.USER, "Hello");
-        ConversationMessage stubMsg = ConversationMessage.create(interviewId, ConversationRole.ASSISTANT, "AI assistant is not configured");
-        when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(userMsg));
-        when(repository.save(any())).thenReturn(stubMsg);
-
+        AiChatService service = buildService();
         var result = service.streamChat(interviewId, "Hello", null);
 
         assertThat(result.messageId()).isNotNull();
@@ -216,6 +225,7 @@ class AiChatServiceTest {
         assertThat(tokens).hasSize(1);
         assertThat(tokens.get(0)).contains("AI assistant is not configured");
 
-        verify(repository, times(2)).save(any(ConversationMessage.class));
+        // 驗證 chatMemory.add() 被呼叫：user message + stub assistant message
+        verify(chatMemory, times(2)).add(eq(interviewId.toString()), any(Message.class));
     }
 }
