@@ -15,16 +15,19 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+
+import com.interview.execution.TerminalSession;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 @Profile("!lab")
@@ -33,9 +36,12 @@ class DockerContainerManager implements ContainerManager {
     private static final Logger log = LoggerFactory.getLogger(DockerContainerManager.class);
 
     private final DockerClient dockerClient;
+    private final String dockerHost;
 
-    DockerContainerManager(DockerClient dockerClient) {
+    DockerContainerManager(DockerClient dockerClient,
+                           @Value("${execution.docker.host:unix:///var/run/docker.sock}") String dockerHost) {
         this.dockerClient = dockerClient;
+        this.dockerHost = dockerHost;
     }
 
     /**
@@ -196,6 +202,33 @@ class DockerContainerManager implements ContainerManager {
             return new CodeExecutionResult(-1, "", e.getMessage(), System.currentTimeMillis() - startMs,
                     ExecutionStatus.ERROR);
         }
+    }
+
+    @Override
+    public TerminalSession createTerminalSession(String containerId, String workDir) {
+        // 步驟一：用 docker-java 建立 exec（HTTP POST，不需 hijacking，docker-java 能正確處理）
+        // withTty(true)：分配 PTY，讓 bash 提供完整的行編輯、ANSI 顏色、Tab 補全體驗。
+        // TTY 模式的輸出是原始位元組（無多工 frame header），由 DockerTerminalSession 直接轉發。
+        ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
+                .withCmd("/bin/bash", "-c", "cd " + shellEscape(workDir) + " && exec /bin/bash -i")
+                .withAttachStdin(true)
+                .withAttachStdout(true)
+                .withAttachStderr(true)
+                .withTty(true)
+                .exec();
+
+        // 步驟二：用原始 socket HTTP hijacking 啟動 exec 並建立雙向串流
+        // 每個 session 使用獨立的 socket 連線，支援多個 tab 並行使用
+        String sessionId = UUID.randomUUID().toString();
+        return new DockerTerminalSession(sessionId, exec.getId(), dockerHost, dockerClient);
+    }
+
+    /**
+     * Shell 安全引用字串：用單引號包圍，並跳脫內部的單引號。
+     * 防止 workDir 中含有空格或特殊字元時命令注入。
+     */
+    private static String shellEscape(String s) {
+        return "'" + s.replace("'", "'\\''") + "'";
     }
 
     private String[] execRaw(String containerId, String command, int timeoutSeconds) {

@@ -50,6 +50,9 @@ class InterviewServiceTest {
     @Mock
     private ContainerInitializationService containerInitService;
 
+    @Mock
+    private TerminalSessionService terminalSessionService;
+
     @InjectMocks
     private InterviewService service;
 

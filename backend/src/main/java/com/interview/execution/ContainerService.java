@@ -42,4 +42,12 @@ public class ContainerService {
     public CodeExecutionResult execCommand(String containerId, String command, int timeoutSeconds) {
         return containerManager.execCommand(containerId, command, timeoutSeconds);
     }
+
+    /**
+     * 在指定容器中建立互動式 bash 終端 session。
+     * facade 方法：interview 模組不需要直接依賴 ContainerManager 實作細節。
+     */
+    public TerminalSession createTerminalSession(String containerId, String workDir) {
+        return containerManager.createTerminalSession(containerId, workDir);
+    }
 }

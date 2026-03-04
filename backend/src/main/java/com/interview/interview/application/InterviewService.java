@@ -31,19 +31,22 @@ public class InterviewService {
     private final ContainerService containerService;
     private final ExamConfigService examConfigService;
     private final ContainerInitializationService containerInitService;
+    private final TerminalSessionService terminalSessionService;
 
     public InterviewService(InterviewRepository repository,
                             ApplicationEventPublisher eventPublisher,
                             QuestionService questionService,
                             ContainerService containerService,
                             ExamConfigService examConfigService,
-                            ContainerInitializationService containerInitService) {
+                            ContainerInitializationService containerInitService,
+                            TerminalSessionService terminalSessionService) {
         this.repository = repository;
         this.eventPublisher = eventPublisher;
         this.questionService = questionService;
         this.containerService = containerService;
         this.examConfigService = examConfigService;
         this.containerInitService = containerInitService;
+        this.terminalSessionService = terminalSessionService;
     }
 
     public Interview createInterview(CreateInterviewCommand command) {
@@ -98,6 +101,8 @@ public class InterviewService {
     public Interview completeInterview(UUID interviewId) {
         Interview interview = repository.findById(interviewId)
                 .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + interviewId));
+        // 先關閉所有終端 sessions，再停止容器，避免 terminal 連線寫入已停止的容器
+        terminalSessionService.closeAllSessions(interviewId);
         stopContainerIfRunning(interview);
         interview.complete();
         interview.clearContainer();
@@ -109,6 +114,8 @@ public class InterviewService {
     public Interview cancelInterview(UUID interviewId) {
         Interview interview = repository.findById(interviewId)
                 .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + interviewId));
+        // 先關閉所有終端 sessions，再停止容器
+        terminalSessionService.closeAllSessions(interviewId);
         stopContainerIfRunning(interview);
         interview.cancel();
         interview.clearContainer();

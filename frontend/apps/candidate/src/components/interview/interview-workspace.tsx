@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiPost } from "@interview/shared/lib/api-client";
 import { CodeEditor } from "@/components/code-editor/code-editor";
-import { ExecutionOutput } from "./execution-output";
+import { TerminalPanel } from "./terminal-panel";
 import { FileTabs } from "./file-tabs";
 import { FileExplorer } from "./file-explorer";
 import { RightPanel } from "./right-panel";
@@ -137,9 +137,10 @@ export function InterviewWorkspace({
             </div>
           </div>
 
-          {/* Terminal: completely hidden or fully shown (VS Code style) */}
+          {/* Terminal Panel：VS Code 風格 tab 式終端（測試結果 + 互動式 bash） */}
           {layout.terminal && (
-            <ExecutionOutput
+            <TerminalPanel
+              interviewId={interviewId}
               onClose={toggleTerminal}
               height={terminalResize.height}
               onResizeMouseDown={terminalResize.onMouseDown}

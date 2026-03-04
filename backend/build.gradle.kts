@@ -29,6 +29,9 @@ dependencies {
     // Spring Boot Web
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
 
+    // WebSocket — 互動式終端機需要雙向即時通訊，HTTP 長輪詢無法滿足
+    implementation("org.springframework.boot:spring-boot-starter-websocket")
+
     // Spring Data JDBC
     implementation("org.springframework.boot:spring-boot-starter-data-jdbc")
 

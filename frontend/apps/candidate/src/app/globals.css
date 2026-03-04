@@ -2,6 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "streamdown/styles.css";
+/* xterm.js 需要 CSS 才能正確顯示游標、選取範圍和滾動條 */
+@import "@xterm/xterm/css/xterm.css";
 
 @source "../../../node_modules/streamdown/dist/*.js";
 @source "../../../../packages/shared/src/**/*.tsx";

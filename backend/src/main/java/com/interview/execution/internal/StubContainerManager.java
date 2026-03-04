@@ -4,6 +4,7 @@ import com.interview.execution.CodeExecutionResult;
 import com.interview.execution.ContainerFile;
 import com.interview.execution.ContainerManager;
 import com.interview.execution.ExecutionStatus;
+import com.interview.execution.TerminalSession;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -46,5 +47,11 @@ class StubContainerManager implements ContainerManager {
     @Override
     public CodeExecutionResult execCommand(String containerId, String command, int timeoutSeconds) {
         return new CodeExecutionResult(0, "stub output", "", 0L, ExecutionStatus.SUCCESS);
+    }
+
+    @Override
+    public TerminalSession createTerminalSession(String containerId, String workDir) {
+        // lab profile 下回傳 echo-back stub，不需要真正的 Docker exec
+        return new StubTerminalSession();
     }
 }

@@ -7,6 +7,7 @@ import com.interview.execution.ContainerFile;
 import com.interview.execution.ContainerManager;
 import com.interview.execution.ExecutionStatus;
 import com.interview.execution.ProjectExecutionRequest;
+import com.interview.execution.TerminalSession;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -140,6 +141,19 @@ public class TestCodeExecutorConfig {
             return switch (currentMode) {
                 case FORCE_PASS -> new CodeExecutionResult(0, "All tests passed", "", 10L, ExecutionStatus.SUCCESS);
                 case FORCE_FAIL -> new CodeExecutionResult(1, "", "Tests failed", 10L, ExecutionStatus.ERROR);
+            };
+        }
+
+        @Override
+        public TerminalSession createTerminalSession(String containerId, String workDir) {
+            // BDD 測試不需要真實終端，回傳 no-op stub 即可通過 ContainerManager 介面實作
+            return new TerminalSession() {
+                @Override public String getId() { return "test-terminal"; }
+                @Override public void write(byte[] data) {}
+                @Override public void onOutput(java.util.function.Consumer<byte[]> callback) {}
+                @Override public void resize(int cols, int rows) {}
+                @Override public boolean isAlive() { return false; }
+                @Override public void close() {}
             };
         }
     }
