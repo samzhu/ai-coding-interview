@@ -28,17 +28,43 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@interview/shared/components/ai-elements/prompt-input";
+import { EditProposalCard, type EditProposalData } from "./edit-proposal-card";
 
 interface AiChatPanelProps {
   interviewId: string;
   aiEnabled?: boolean;
 }
 
+
+// edit_proposal XML 區塊的正則（後端串流時包含原始 XML，前端需過濾避免顯示生硬標籤）
+const EDIT_PROPOSAL_REGEX = /<edit_proposal[\s\S]*?<\/edit_proposal>/g;
+
 function getTextContent(message: UIMessage): string {
-  return message.parts
+  const raw = message.parts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.text)
     .join("");
+  // 過濾掉 edit_proposal XML 區塊，候選人看到的是乾淨的說明文字
+  return raw.replace(EDIT_PROPOSAL_REGEX, "").trim();
+}
+
+// AI SDK v6 要求 data 事件 type 以 "data-" 開頭，
+// 後端送出 {"type":"data-edit-proposal",...}，
+// SDK 會在 message.parts 加入 { type: "data-edit-proposal", id, data: {...} }。
+function getEditProposals(message: UIMessage): EditProposalData[] {
+  return message.parts
+    .filter(
+      (p): p is Extract<typeof p, { type: `data-${string}` }> =>
+        p.type === "data-edit-proposal"
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((p) => (p as any).data)
+    .filter(
+      (item: unknown): item is EditProposalData =>
+        typeof item === "object" &&
+        item !== null &&
+        (item as EditProposalData).type === "edit-proposal"
+    );
 }
 
 export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps) {
@@ -112,19 +138,36 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
                   description="您可以詢問 AI 助理關於題目的提示或說明"
                 />
               )}
-              {messages.map((message) => (
-                <Message key={message.id} from={message.role}>
-                  <MessageContent>
-                    {message.role === "assistant" ? (
-                      <MessageResponse>{getTextContent(message)}</MessageResponse>
-                    ) : (
-                      <p className="whitespace-pre-wrap text-sm">
-                        {getTextContent(message)}
-                      </p>
-                    )}
-                  </MessageContent>
-                </Message>
-              ))}
+              {messages.map((message) => {
+                const textContent = getTextContent(message);
+                const proposals = message.role === "assistant"
+                  ? getEditProposals(message)
+                  : [];
+                return (
+                  <Message key={message.id} from={message.role}>
+                    <MessageContent>
+                      {message.role === "assistant" ? (
+                        <>
+                          {textContent && (
+                            <MessageResponse>{textContent}</MessageResponse>
+                          )}
+                          {proposals.map((proposal, idx) => (
+                            <EditProposalCard
+                              key={`${message.id}-proposal-${idx}`}
+                              interviewId={interviewId}
+                              proposal={proposal}
+                            />
+                          ))}
+                        </>
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm">
+                          {textContent}
+                        </p>
+                      )}
+                    </MessageContent>
+                  </Message>
+                );
+              })}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

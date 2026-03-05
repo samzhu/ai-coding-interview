@@ -4,6 +4,7 @@ import com.interview.ai.AiChatMessageEvent;
 import com.interview.ai.domain.ConversationMessage;
 import com.interview.ai.infrastructure.persistence.ConversationMessageRepository;
 import com.interview.ai.internal.AiModelRegistry;
+import com.interview.ai.internal.InterviewWorkspaceTools;
 import com.interview.interview.InterviewAiPolicyProvider;
 import com.interview.interview.InterviewExpiredException;
 import com.interview.interview.InterviewModelProvider;
@@ -20,7 +21,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +45,8 @@ public class AiChatService {
     private final InterviewAiPolicyProvider aiPolicyProvider;
     private final InterviewTimeProvider interviewTimeProvider;
     private final ApplicationEventPublisher eventPublisher;
+    // AI 工具集（listFiles、readFile、runCommand），透過 tool calling 讓 AI 自動呼叫
+    private final InterviewWorkspaceTools workspaceTools;
 
     public AiChatService(ConversationMessageRepository repository,
                          ChatMemory chatMemory,
@@ -49,7 +54,8 @@ public class AiChatService {
                          InterviewModelProvider interviewModelProvider,
                          InterviewAiPolicyProvider aiPolicyProvider,
                          InterviewTimeProvider interviewTimeProvider,
-                         ApplicationEventPublisher eventPublisher) {
+                         ApplicationEventPublisher eventPublisher,
+                         InterviewWorkspaceTools workspaceTools) {
         this.repository = repository;
         this.chatMemory = chatMemory;
         this.modelRegistry = modelRegistry;
@@ -57,6 +63,7 @@ public class AiChatService {
         this.aiPolicyProvider = aiPolicyProvider;
         this.interviewTimeProvider = interviewTimeProvider;
         this.eventPublisher = eventPublisher;
+        this.workspaceTools = workspaceTools;
     }
 
     public ConversationMessage chat(UUID interviewId, String userMessage) {
@@ -128,10 +135,24 @@ public class AiChatService {
         if (!systemPrompt.isEmpty()) {
             promptSpec = promptSpec.system(systemPrompt);
         }
-        Flux<String> stream = promptSpec
-                .messages(conversationMessages)
-                .stream()
-                .content()
+        // 設計說明：為何使用 .call() 而非 .stream() 搭配 tool calling？
+        // Spring AI 官方文件（2.0）的 Tool Calling 範例皆使用 .call()。
+        // streaming 模式下，model 發出 function_call → Spring AI 需中斷 stream → 執行工具 →
+        // 送回結果 → 繼續 stream，這個中斷/恢復流程在 milestone 版本中可靠性較低。
+        // 解法：用 .call() 確保 tool calling 正確執行，再用 Flux.fromIterable() 將完整回覆
+        // 切成小段回傳給前端，保留串流 UX 體驗。
+        final var finalPromptSpec = promptSpec;
+        Flux<String> stream = Flux.defer(() -> {
+                    String fullContent = finalPromptSpec
+                            .messages(conversationMessages)
+                            .tools(workspaceTools)
+                            .toolContext(Map.of("interviewId", interviewId.toString()))
+                            .call()
+                            .content();
+                    // 切分為小段（每段約 20 字元）模擬 token stream
+                    return Flux.fromIterable(splitIntoChunks(fullContent, 20));
+                })
+                .subscribeOn(Schedulers.boundedElastic())
                 .doOnNext(fullResponse::append)
                 .doOnComplete(() -> {
                     try {
@@ -182,12 +203,29 @@ public class AiChatService {
             }
             return promptSpec
                     .messages(conversationMessages)
+                    .tools(workspaceTools)
+                    .toolContext(Map.of("interviewId", interviewId.toString()))
                     .call()
                     .content();
         } catch (Exception e) {
             log.error("AI chat call failed", e);
             return "AI assistant temporarily unavailable. Please try again later.";
         }
+    }
+
+    /**
+     * 將字串切分為固定大小的小段，用於模擬 token stream 效果。
+     * 前端收到連續的小段並即時渲染，視覺上與真正的 streaming 相同。
+     */
+    private List<String> splitIntoChunks(String text, int chunkSize) {
+        if (text == null || text.isEmpty()) {
+            return List.of();
+        }
+        List<String> chunks = new ArrayList<>();
+        for (int i = 0; i < text.length(); i += chunkSize) {
+            chunks.add(text.substring(i, Math.min(i + chunkSize, text.length())));
+        }
+        return chunks;
     }
 
     private String resolveModelId(UUID interviewId, String modelIdOverride) {

@@ -1,9 +1,11 @@
 package com.interview.interview.application;
 
+import com.interview.execution.CodeExecutionResult;
 import com.interview.execution.ContainerFile;
 import com.interview.execution.ContainerService;
 import com.interview.execution.ExamConfig;
 import com.interview.execution.ExamConfigService;
+import com.interview.interview.InterviewFileProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,7 +14,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
-public class FileService {
+public class FileService implements InterviewFileProvider {
 
     private final InterviewService interviewService;
     private final ContainerService containerService;
@@ -69,5 +71,18 @@ public class FileService {
         String workspace = examConfig.effectiveWorkspace();
         String fullPath = path.startsWith("/") ? path : workspace + "/" + path;
         containerService.writeFile(containerId, fullPath, content);
+    }
+
+    /**
+     * 在工作區目錄下執行 shell 指令。
+     * 自動 cd 至 workspace 確保相對路徑正確，並套用指定的 timeout。
+     */
+    @Override
+    public CodeExecutionResult execInWorkspace(UUID interviewId, String command, int timeoutSeconds) {
+        String containerId = interviewService.ensureContainerRunning(interviewId);
+        ExamConfig examConfig = examConfigService.getExamConfig(containerId);
+        String workspace = examConfig.effectiveWorkspace();
+        String fullCommand = "cd " + workspace + " && " + command;
+        return containerService.execCommand(containerId, fullCommand, timeoutSeconds);
     }
 }

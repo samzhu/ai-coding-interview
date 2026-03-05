@@ -3,6 +3,7 @@ package com.interview.ai.application;
 import com.interview.ai.domain.ConversationMessage;
 import com.interview.ai.infrastructure.persistence.ConversationMessageRepository;
 import com.interview.ai.internal.AiModelRegistry;
+import com.interview.ai.internal.InterviewWorkspaceTools;
 import com.interview.interview.InterviewAiPolicyProvider;
 import com.interview.interview.InterviewExpiredException;
 import com.interview.interview.InterviewModelProvider;
@@ -58,9 +59,13 @@ class AiChatServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private InterviewWorkspaceTools workspaceTools;
+
     private AiChatService buildService() {
         return new AiChatService(repository, chatMemory, modelRegistry,
-                interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher);
+                interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher,
+                workspaceTools);
     }
 
     @Test
@@ -69,7 +74,8 @@ class AiChatServiceTest {
         UUID interviewId = UUID.randomUUID();
 
         ChatClient chatClient = Mockito.mock(ChatClient.class, Mockito.RETURNS_DEEP_STUBS);
-        when(chatClient.prompt().messages(anyList()).call().content())
+        // 鏈中加入 .tools().toolContext() — 與 AiChatService 實際呼叫一致
+        when(chatClient.prompt().messages(anyList()).tools(workspaceTools).toolContext(any()).call().content())
                 .thenReturn("Think about using a hash map.");
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
@@ -133,8 +139,10 @@ class AiChatServiceTest {
         UUID interviewId = UUID.randomUUID();
 
         ChatClient chatClient = Mockito.mock(ChatClient.class, Mockito.RETURNS_DEEP_STUBS);
-        when(chatClient.prompt().messages(anyList()).stream().content())
-                .thenReturn(Flux.just("Hello", " World"));
+        // 底層改為 .call() 確保 tool calling 正確執行（streaming + tool calling 可靠性問題）
+        // 對應 AiChatService 的 Flux.defer(() -> ... .call().content()) 路徑
+        when(chatClient.prompt().messages(anyList()).tools(workspaceTools).toolContext(any()).call().content())
+                .thenReturn("Hello World");
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
@@ -147,8 +155,9 @@ class AiChatServiceTest {
 
         assertThat(result.messageId()).isNotNull();
 
+        // splitIntoChunks("Hello World", 20)：11 字元 < 20，整個字串為一個 chunk
         List<String> tokens = result.tokenStream().collectList().block();
-        assertThat(tokens).containsExactly("Hello", " World");
+        assertThat(tokens).containsExactly("Hello World");
 
         // 驗證 doOnComplete 後 chatMemory.add() 被呼叫（存入 assistant 回覆）
         // 明確指定 Message 型別避免 ChatMemory.add(String, Message) 與 add(String, List) 歧義
