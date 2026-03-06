@@ -8,7 +8,8 @@ ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 COPY package.json package-lock.json ./
 COPY packages/shared/ packages/shared/
 COPY apps/candidate/ apps/candidate/
-RUN npm ci --workspace=apps/candidate
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --workspace=apps/candidate
 WORKDIR /app/apps/candidate
 RUN npm run build:export
 

@@ -10,7 +10,8 @@ ENV NEXT_PUBLIC_CANDIDATE_URL=${NEXT_PUBLIC_CANDIDATE_URL}
 COPY package.json package-lock.json ./
 COPY packages/shared/ packages/shared/
 COPY apps/admin/ apps/admin/
-RUN npm ci --workspace=apps/admin
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --workspace=apps/admin
 WORKDIR /app/apps/admin
 RUN npm run build:export
 

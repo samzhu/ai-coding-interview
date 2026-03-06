@@ -106,6 +106,16 @@
   --sidebar-ring:                oklch(0.537 0.162 243);
 }
 
+/* 乳牛「走過畫面」：右→左，overflow-hidden 裁切產生「走到邊界消失」效果 */
+@keyframes walk-across {
+  from { left: 100%; }    /* 從右邊界外進入 */
+  to   { left: -80px; }   /* 完全走出左邊界（牛寬 80px） */
+}
+
+@utility animate-walk-across {
+  animation: walk-across 6s linear infinite;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

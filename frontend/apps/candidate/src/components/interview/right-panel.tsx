@@ -53,13 +53,15 @@ export function RightPanel({ interviewId, aiEnabled, onClose, onRun, isRunning, 
         </button>
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-hidden">
-        {activeTab === "question" ? (
-          <CheckpointPanel onRun={onRun} isRunning={isRunning} onEndInterview={onEndInterview} />
-        ) : (
-          <AiChatPanel interviewId={interviewId} aiEnabled={aiEnabled} />
-        )}
+      {/* Tab content
+          設計說明：同時 mount 兩個面板，用 CSS hidden 切換顯示。
+          避免 AiChatPanel unmount 導致 useChat in-memory messages
+          （含 tool invocation、edit proposal 等 SSE 事件）丟失。 */}
+      <div className={cn("flex-1 overflow-hidden", activeTab !== "question" && "hidden")}>
+        <CheckpointPanel onRun={onRun} isRunning={isRunning} onEndInterview={onEndInterview} />
+      </div>
+      <div className={cn("flex-1 overflow-hidden", activeTab !== "ai" && "hidden")}>
+        <AiChatPanel interviewId={interviewId} aiEnabled={aiEnabled} />
       </div>
     </div>
   );

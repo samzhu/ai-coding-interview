@@ -2,6 +2,7 @@ package com.interview.interview.interfaces.rest;
 
 import com.interview.execution.ContainerFile;
 import com.interview.interview.application.FileService;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,6 +31,7 @@ class FileController {
     }
 
     @PutMapping("/content")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     void writeFile(@PathVariable UUID interviewId,
                    @RequestParam String path,
                    @RequestBody WriteFileRequest request) {

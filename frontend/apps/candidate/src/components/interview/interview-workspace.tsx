@@ -36,6 +36,13 @@ export function InterviewWorkspace({
   const rightPanelResize = useResizablePanel({ initialWidth: 320, minWidth: 240, maxWidth: 600, reversed: true });
   const terminalResize = useResizableHeight({ initialHeight: 192, minHeight: 100, maxHeight: 500 });
 
+  // 計算目前 active 檔案的 diffOriginal（多檔案 diff 設計）：
+  // 若 activeFilePath 是此 ChangeSet 中有 diff 的檔案，顯示對應的 originalFullContent；
+  // 否則為 null（不進入 diff 模式）。這讓使用者可透過 FileTabs 切換查看不同檔案的 diff。
+  const diffOriginal = state.diffReview
+    ? (state.diffReview.fileDiffs.get(state.activeFilePath ?? "")?.originalFullContent ?? null)
+    : null;
+
   const handleExpired = useCallback(async () => {
     try {
       await apiPost(`/interviews/${interviewId}/complete`);
@@ -131,8 +138,9 @@ export function InterviewWorkspace({
                 value={state.code}
                 onChange={handleCodeChange}
                 language={detectLanguage(state.activeFilePath)}
-                readOnly={false}
+                readOnly={state.diffReview != null}
                 className="h-full"
+                diffOriginal={diffOriginal}
               />
             </div>
           </div>

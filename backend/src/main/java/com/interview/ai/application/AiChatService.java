@@ -24,10 +24,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Service
@@ -95,7 +97,13 @@ public class AiChatService {
 
     public record StreamingChatResult(Flux<String> tokenStream, UUID messageId) {}
 
-    public StreamingChatResult streamChat(UUID interviewId, String userMessage, String modelIdOverride) {
+    /**
+     * @param toolSseEmitter 由 AiChatController 提供的 SSE 寫入器（Consumer&lt;String&gt;）。
+     *                       工具執行前後透過此 consumer 直接寫入 SSE 串流，讓前端即時顯示 tool 狀態。
+     *                       傳入 null 或 no-op consumer 即可停用 tool 事件推送。
+     */
+    public StreamingChatResult streamChat(UUID interviewId, String userMessage, String modelIdOverride,
+                                          Consumer<String> toolSseEmitter) {
         if (!aiPolicyProvider.isAiEnabled(interviewId)) {
             throw new AiDisabledException("此階段 AI 不可用，請獨立完成題目");
         }
@@ -141,12 +149,22 @@ public class AiChatService {
         // 送回結果 → 繼續 stream，這個中斷/恢復流程在 milestone 版本中可靠性較低。
         // 解法：用 .call() 確保 tool calling 正確執行，再用 Flux.fromIterable() 將完整回覆
         // 切成小段回傳給前端，保留串流 UX 體驗。
+        //
+        // tool 事件即時推送：toolSseEmitter 注入 ToolContext，供 InterviewWorkspaceTools
+        // 在每個工具執行前後直接寫入 SSE 串流。由於工具在 Flux.defer() 同一執行緒中
+        // 順序執行（tool → text chunks），不會與文字 delta 寫入競爭，無需額外同步。
         final var finalPromptSpec = promptSpec;
+        // 使用 HashMap 而非 Map.of()，以支援 null 值（toolSseEmitter 可能為 null）
+        Map<String, Object> toolContextMap = new HashMap<>();
+        toolContextMap.put("interviewId", interviewId.toString());
+        if (toolSseEmitter != null) {
+            toolContextMap.put("toolSseEmitter", toolSseEmitter);
+        }
         Flux<String> stream = Flux.defer(() -> {
                     String fullContent = finalPromptSpec
                             .messages(conversationMessages)
                             .tools(workspaceTools)
-                            .toolContext(Map.of("interviewId", interviewId.toString()))
+                            .toolContext(toolContextMap)
                             .call()
                             .content();
                     // 切分為小段（每段約 20 字元）模擬 token stream

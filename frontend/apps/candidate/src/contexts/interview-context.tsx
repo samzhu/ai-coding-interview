@@ -5,6 +5,7 @@ import {
   useContext,
   useReducer,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import type {
@@ -13,6 +14,25 @@ import type {
   InterviewStatus,
   ExecutionResponse,
 } from "@interview/shared/types";
+import {
+  groupProposalsByFile,
+  type ChangeSet,
+  type EditProposalData,
+} from "@/lib/changeset";
+import { mergeProposals } from "@/lib/diff-utils";
+
+/**
+ * DiffReviewState — 多檔案 diff 審查狀態
+ *
+ * 設計說明：同一 AI 回應可能對多個檔案提案修改，
+ * fileDiffs 以 filePath 為 key 儲存每個檔案的原始與提案完整內容。
+ * 編輯器根據 state.activeFilePath 決定顯示哪個檔案的 diff，
+ * 不需要額外的 activeReviewFilePath 欄位（複用既有的 activeFilePath）。
+ */
+interface DiffReviewState {
+  changeSetMessageId: string;
+  fileDiffs: Map<string, { originalFullContent: string; proposedFullContent: string }>;
+}
 
 interface InterviewState {
   interviewId: string;
@@ -29,6 +49,12 @@ interface InterviewState {
   isSubmitting: boolean;
   isRunning: boolean;
   lastExecution: ExecutionResponse | null;
+  // VSCode 風格 inline diff 審查狀態，null 表示未進入 diff 模式
+  diffReview: DiffReviewState | null;
+  // 所有 ChangeSets（key = messageId），供 ChangeSetCard 讀取狀態
+  changeSets: Map<string, ChangeSet>;
+  // 目前 pending（等待使用者決定）的 ChangeSet messageId，null 表示無
+  pendingChangeSetId: string | null;
 }
 
 type InterviewAction =
@@ -44,10 +70,31 @@ type InterviewAction =
   | { type: "SET_EXECUTION"; payload: ExecutionResponse }
   | { type: "SET_STATUS"; payload: InterviewStatus }
   | { type: "LOAD_FILES"; payload: Map<string, CheckpointFileState> }
+  | { type: "REGISTER_CHANGESET"; payload: { messageId: string; proposals: EditProposalData[] } }
+  | { type: "APPLY_CHANGESET"; payload: { messageId: string } }
+  | { type: "REJECT_CHANGESET"; payload: { messageId: string } }
   | {
       type: "CHECKPOINT_RESULT";
       payload: { result: CheckpointResultResponse; execution: ExecutionResponse | null };
     };
+
+/**
+ * 正規化查找：嘗試多種路徑格式匹配 state.files 的 key。
+ * 設計說明：AI 看到 listFiles 回傳的絕對路徑（/workspace/main.py），
+ * 但 system prompt 範例為相對路徑，AI 輸出格式不確定。
+ * 依序嘗試：精確匹配 → 加 /workspace/ 前綴 → endsWith 後綴匹配。
+ */
+function resolveFilePath(files: Map<string, unknown>, proposalPath: string): string | null {
+  if (files.has(proposalPath)) return proposalPath;
+  if (!proposalPath.startsWith("/")) {
+    const abs = "/workspace/" + proposalPath;
+    if (files.has(abs)) return abs;
+  }
+  for (const key of files.keys()) {
+    if (key.endsWith("/" + proposalPath)) return key;
+  }
+  return null;
+}
 
 function findReadme(files: Map<string, CheckpointFileState>): string | null {
   for (const filePath of files.keys()) {
@@ -168,6 +215,144 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
       return { ...state, lastExecution: action.payload };
     case "SET_STATUS":
       return { ...state, status: action.payload };
+
+    case "REGISTER_CHANGESET": {
+      const { messageId, proposals } = action.payload;
+
+      // 若有上一個 pending changeset，先隱性拒絕它（還原檔案至原始內容）
+      let currentFiles = new Map(state.files);
+      let currentCode = state.code;
+      const updatedChangeSets = new Map(state.changeSets);
+
+      if (state.pendingChangeSetId && state.diffReview) {
+        const prevId = state.pendingChangeSetId;
+        const prevCs = updatedChangeSets.get(prevId);
+        if (prevCs) updatedChangeSets.set(prevId, { ...prevCs, status: "rejected" });
+        // 還原上一個 changeset 影響的檔案
+        for (const [filePath, fileDiff] of state.diffReview.fileDiffs) {
+          const file = currentFiles.get(filePath);
+          if (file) {
+            currentFiles.set(filePath, { ...file, content: fileDiff.originalFullContent });
+            if (filePath === state.activeFilePath) {
+              currentCode = fileDiff.originalFullContent;
+            }
+          }
+        }
+      }
+
+      // 建立新 ChangeSet（按檔案分組，計算 stats）
+      const changeSet = groupProposalsByFile(messageId, proposals);
+      updatedChangeSets.set(messageId, changeSet);
+
+      if (changeSet.fileChanges.length === 0) {
+        return {
+          ...state,
+          files: currentFiles,
+          code: currentCode,
+          changeSets: updatedChangeSets,
+          pendingChangeSetId: messageId,
+        };
+      }
+
+      // 計算每個檔案的 fileDiff（originalFullContent + proposedFullContent）
+      // proposedFullContent 由 mergeProposals 批次套用同檔案所有 proposals 計算得出
+      // key 統一使用 resolvedPath（與 state.files 的 key 一致），避免 AI 相對/絕對路徑不一致
+      const fileDiffs = new Map<
+        string,
+        { originalFullContent: string; proposedFullContent: string }
+      >();
+      for (const fileChange of changeSet.fileChanges) {
+        const resolvedPath = resolveFilePath(currentFiles, fileChange.filePath);
+        const file = resolvedPath ? currentFiles.get(resolvedPath) : undefined;
+        const originalFullContent = file?.content ?? "";
+        const { result: proposedFullContent } = mergeProposals(
+          originalFullContent,
+          fileChange.proposals
+        );
+        const key = resolvedPath ?? fileChange.filePath;
+        fileDiffs.set(key, { originalFullContent, proposedFullContent });
+      }
+
+      // 更新 state.files 為 proposed 內容（讓編輯器顯示 proposed，diff 對比 original）
+      for (const [filePath, fileDiff] of fileDiffs) {
+        const file = currentFiles.get(filePath);
+        if (file) {
+          currentFiles.set(filePath, { ...file, content: fileDiff.proposedFullContent });
+        }
+      }
+
+      // 進入 diff 模式，展示第一個異動檔案
+      // 優先使用 fileDiffs 的 key（已 resolved），而非 fileChanges 的原始 filePath
+      const firstFilePath = fileDiffs.keys().next().value ?? changeSet.fileChanges[0].filePath;
+      const firstFileDiff = fileDiffs.get(firstFilePath)!;
+      const openFiles = state.openFiles.includes(firstFilePath)
+        ? state.openFiles
+        : [...state.openFiles, firstFilePath];
+
+      return {
+        ...state,
+        files: currentFiles,
+        code: firstFileDiff.proposedFullContent,
+        openFiles,
+        activeFilePath: firstFilePath,
+        changeSets: updatedChangeSets,
+        pendingChangeSetId: messageId,
+        diffReview: { changeSetMessageId: messageId, fileDiffs },
+      };
+    }
+
+    case "APPLY_CHANGESET": {
+      // 標記 ChangeSet 為已套用，清除 diff 模式。
+      // 實際的檔案寫入（apiPut + setFileContent）已由 ChangeSetCard 處理完畢。
+      const { messageId } = action.payload;
+      const newChangeSets = new Map(state.changeSets);
+      const cs = newChangeSets.get(messageId);
+      if (cs) newChangeSets.set(messageId, { ...cs, status: "applied" });
+      return {
+        ...state,
+        changeSets: newChangeSets,
+        pendingChangeSetId: state.pendingChangeSetId === messageId ? null : state.pendingChangeSetId,
+        diffReview:
+          state.diffReview?.changeSetMessageId === messageId ? null : state.diffReview,
+      };
+    }
+
+    case "REJECT_CHANGESET": {
+      // 拒絕提案：還原檔案至 originalFullContent，清除 diff 模式。
+      // 因為 REGISTER_CHANGESET 已把 state.files 更新為 proposed 內容，
+      // 這裡需要從 fileDiffs 還原。後端無需操作（proposed 內容從未寫入後端）。
+      const { messageId } = action.payload;
+      const newChangeSets = new Map(state.changeSets);
+      const cs = newChangeSets.get(messageId);
+      if (cs) newChangeSets.set(messageId, { ...cs, status: "rejected" });
+
+      let newFiles = new Map(state.files);
+      let newCode = state.code;
+
+      if (state.diffReview?.changeSetMessageId === messageId) {
+        for (const [filePath, fileDiff] of state.diffReview.fileDiffs) {
+          const file = newFiles.get(filePath);
+          if (file) {
+            newFiles.set(filePath, { ...file, content: fileDiff.originalFullContent });
+            if (filePath === state.activeFilePath) {
+              newCode = fileDiff.originalFullContent;
+            }
+          }
+        }
+      }
+
+      return {
+        ...state,
+        changeSets: newChangeSets,
+        pendingChangeSetId:
+          state.pendingChangeSetId === messageId ? null : state.pendingChangeSetId,
+        diffReview:
+          state.diffReview?.changeSetMessageId === messageId ? null : state.diffReview,
+        files: newFiles,
+        code: newCode,
+      };
+    }
+
     case "CHECKPOINT_RESULT": {
       const { result } = action.payload;
       // 同步更新 checkpoints[] 中對應 entry 的 status，讓 stepper 可以反映最新狀態
@@ -208,6 +393,17 @@ interface InterviewContextValue {
     execution: ExecutionResponse | null
   ) => void;
   loadFiles: (files: Map<string, CheckpointFileState>) => void;
+  // ChangeSet 批次審查 API（新設計，取代舊的 enterDiffReview/exitDiffReview）
+  /** 收到 AI proposals → 建立 ChangeSet + 自動進入 diff 模式 */
+  registerChangeSet: (messageId: string, proposals: EditProposalData[]) => void;
+  /** 使用者同意 → 標記 applied，清除 diff 模式（實際 apiPut 由 ChangeSetCard 處理） */
+  applyChangeSet: (messageId: string) => void;
+  /** 使用者拒絕 → 還原檔案內容，清除 diff 模式 */
+  rejectChangeSet: (messageId: string) => void;
+  // 由 AiChatPanel 透過 registerSendAiMessage 注入後，讓其他元件可送出 AI 訊息。
+  // 若 AiChatPanel 尚未掛載則呼叫為 no-op（ref 尚未被設定）。
+  sendAiMessage: (text: string) => void;
+  registerSendAiMessage: (fn: (text: string) => void) => void;
 }
 
 const InterviewContext = createContext<InterviewContextValue | null>(null);
@@ -247,6 +443,9 @@ export function InterviewProvider({
     isSubmitting: false,
     isRunning: false,
     lastExecution: null,
+    diffReview: null,
+    changeSets: new Map<string, ChangeSet>(),
+    pendingChangeSetId: null,
   });
 
   const setCode = useCallback((code: string) => {
@@ -304,6 +503,32 @@ export function InterviewProvider({
     dispatch({ type: "LOAD_FILES", payload: files });
   }, []);
 
+  const registerChangeSet = useCallback(
+    (messageId: string, proposals: EditProposalData[]) => {
+      dispatch({ type: "REGISTER_CHANGESET", payload: { messageId, proposals } });
+    },
+    []
+  );
+
+  const applyChangeSet = useCallback((messageId: string) => {
+    dispatch({ type: "APPLY_CHANGESET", payload: { messageId } });
+  }, []);
+
+  const rejectChangeSet = useCallback((messageId: string) => {
+    dispatch({ type: "REJECT_CHANGESET", payload: { messageId } });
+  }, []);
+
+  // sendAiMessage 由 AiChatPanel 透過 registerSendAiMessage 注入。
+  // 使用 ref + stable wrapper，讓外部元件呼叫時永遠取到最新的 append 函式，
+  // 且不會因 ref 更新而觸發不必要的 context re-render。
+  const sendAiMessageRef = useRef<((text: string) => void) | null>(null);
+  const registerSendAiMessage = useCallback((fn: (text: string) => void) => {
+    sendAiMessageRef.current = fn;
+  }, []);
+  const sendAiMessage = useCallback((text: string) => {
+    sendAiMessageRef.current?.(text);
+  }, []);
+
   return (
     <InterviewContext.Provider
       value={{
@@ -321,6 +546,11 @@ export function InterviewProvider({
         setStatus,
         applyCheckpointResult,
         loadFiles,
+        registerChangeSet,
+        applyChangeSet,
+        rejectChangeSet,
+        sendAiMessage,
+        registerSendAiMessage,
       }}
     >
       {children}
