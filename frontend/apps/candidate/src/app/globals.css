@@ -124,3 +124,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* AI 聊天面板：隱藏 streamdown code block 內建的下載和複製按鈕，面試情境不需要 */
+[data-streamdown="code-block-download-button"],
+[data-streamdown="code-block-copy-button"] {
+  display: none;
+}

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: 'postgres:17'
+    image: 'postgres:17-alpine'
     environment:
       - 'POSTGRES_DB=interview_db'
       - 'POSTGRES_PASSWORD=interview'
@@ -8,21 +8,21 @@ services:
     ports:
       - '5432'
 
-  dind:
-    image: docker:27-dind
-    privileged: true
-    environment:
-      DOCKER_TLS_CERTDIR: ""
-    ports:
-      - '2375:2375'
-    volumes:
-      - dind-storage:/var/lib/docker
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
+  # dind:
+  #   image: docker:27-dind
+  #   privileged: true
+  #   environment:
+  #     DOCKER_TLS_CERTDIR: ""
+  #   ports:
+  #     - '2375:2375'
+  #   volumes:
+  #     - dind-storage:/var/lib/docker
+  #   healthcheck:
+  #     test: ["CMD", "docker", "info"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+  #     start_period: 10s
 
-volumes:
-  dind-storage:
+# volumes:
+#   dind-storage:

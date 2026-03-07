@@ -17,6 +17,7 @@ spring:
       # -1 表示不設超時，讓串流自然結束或由前端關閉連線。
       request-timeout: -1
 aci:
+  system-prompt-resource: classpath:prompts/system-prompt-dev.md
   models:
     - id: gemini-2.5-flash
       name: Gemini 2.5 Flash
@@ -44,10 +45,7 @@ management:
 
 execution:
   docker:
-    host: ${DOCKER_HOST:tcp://localhost:2375}
-    tls-verify: ${DOCKER_TLS_VERIFY:false}
-    cert-path: ${DOCKER_CERT_PATH:}
-    image: ${EXECUTION_DOCKER_IMAGE:eclipse-temurin:25-jdk}
+    host: ${DOCKER_HOST:unix:///var/run/docker.sock}
 
 interview:
   cleanup:

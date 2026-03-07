@@ -10,4 +10,3 @@ logging:
 execution:
   docker:
     host: ${DOCKER_HOST:unix:///var/run/docker.sock}
-    image: eclipse-temurin:25-jdk

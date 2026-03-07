@@ -15,12 +15,10 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.context.ApplicationEventPublisher;
-import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,9 +27,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,9 +35,6 @@ class AiChatServiceTest {
 
     @Mock
     private ConversationMessageRepository repository;
-
-    @Mock
-    private ChatMemory chatMemory;
 
     @Mock
     private AiModelRegistry modelRegistry;
@@ -62,29 +54,33 @@ class AiChatServiceTest {
     @Mock
     private InterviewWorkspaceTools workspaceTools;
 
+    @Mock
+    private MessageChatMemoryAdvisor memoryAdvisor;
+
+    @Mock
+    private ToolCallAdvisor toolCallAdvisor;
+
     private AiChatService buildService() {
-        return new AiChatService(repository, chatMemory, modelRegistry,
+        return new AiChatService(repository, modelRegistry,
                 interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher,
-                workspaceTools);
+                workspaceTools, memoryAdvisor, toolCallAdvisor);
     }
 
     @Test
-    @DisplayName("chat 應存入用戶訊息並回傳 AI 回覆")
+    @DisplayName("chat 有 ChatClient 時應回傳最後一筆訊息")
     void shouldSaveUserMessageAndReturnAiResponse() {
         UUID interviewId = UUID.randomUUID();
 
+        // 使用 RETURNS_DEEP_STUBS 讓整條 advisor chain 自動回傳 mock
+        // 第二個 advisors() 帶 Consumer<AdvisorSpec>（設定 conversationId 參數），需明確型別避免歧義
         ChatClient chatClient = Mockito.mock(ChatClient.class, Mockito.RETURNS_DEEP_STUBS);
-        // 鏈中加入 .tools().toolContext() — 與 AiChatService 實際呼叫一致
-        when(chatClient.prompt().messages(anyList()).tools(workspaceTools).toolContext(any()).call().content())
+        when(chatClient.prompt().user(any(String.class)).advisors(any(), any())
+                .advisors(any(java.util.function.Consumer.class)).tools(any()).toolContext(any()).call().content())
                 .thenReturn("Think about using a hash map.");
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
 
-        // chatMemory.get() 回傳空歷史（無 SYSTEM prompt），對話訊息為空
-        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
-
-        // 最後查詢 repository 以取得含 id/createdAt 的回傳物件
         ConversationMessage assistantMsg = ConversationMessage.create(
                 interviewId, MessageType.ASSISTANT, "Think about using a hash map.");
         when(repository.findByInterviewIdOrderByCreatedAtAsc(interviewId)).thenReturn(List.of(assistantMsg));
@@ -93,20 +89,18 @@ class AiChatServiceTest {
         ConversationMessage result = service.chat(interviewId, "How do I solve Two Sum?");
 
         assertThat(result.getRole()).isEqualTo("ASSISTANT");
-        // 驗證 chatMemory.add() 被呼叫了 2 次（user + assistant）
-        verify(chatMemory, times(2)).add(eq(interviewId.toString()), any(Message.class));
+        // 驗證最後從 repository 查詢（取得含 id/createdAt 的 DB 物件）
+        verify(repository).findByInterviewIdOrderByCreatedAtAsc(interviewId);
     }
 
     @Test
-    @DisplayName("無可用模型時應回傳 stub 回應")
+    @DisplayName("無可用模型時 chat() 應回傳 stub 回應並直接寫入 repository")
     void shouldReturnStubResponseWhenNoModels() {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.empty());
         when(modelRegistry.getFirstClient()).thenReturn(Optional.empty());
-
-        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
 
         ConversationMessage assistantMsg = ConversationMessage.create(interviewId, MessageType.ASSISTANT,
                 "AI assistant is not configured for this environment. Set GOOGLE_GENAI_API_KEY to enable AI-powered hints.");
@@ -116,6 +110,8 @@ class AiChatServiceTest {
         ConversationMessage result = service.chat(interviewId, "Hello");
 
         assertThat(result.getRole()).isEqualTo("ASSISTANT");
+        // 無 advisor 時直接寫入 repository（user + stub assistant）
+        verify(repository, times(2)).save(any(ConversationMessage.class));
     }
 
     @Test
@@ -138,32 +134,23 @@ class AiChatServiceTest {
     void shouldStreamResponseWhenChatClientPresent() {
         UUID interviewId = UUID.randomUUID();
 
+        // 使用 RETURNS_DEEP_STUBS 讓整條 advisor chain 自動回傳 mock
         ChatClient chatClient = Mockito.mock(ChatClient.class, Mockito.RETURNS_DEEP_STUBS);
-        // 底層改為 .call() 確保 tool calling 正確執行（streaming + tool calling 可靠性問題）
-        // 對應 AiChatService 的 Flux.defer(() -> ... .call().content()) 路徑
-        when(chatClient.prompt().messages(anyList()).tools(workspaceTools).toolContext(any()).call().content())
+        when(chatClient.prompt().user(any(String.class)).advisors(any(), any())
+                .advisors(any(java.util.function.Consumer.class)).tools(any()).toolContext(any()).call().content())
                 .thenReturn("Hello World");
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
         when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
 
-        // chatMemory.get() 回傳空歷史（無 SYSTEM prompt）
-        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
-
         AiChatService service = buildService();
-        var result = service.streamChat(interviewId, "Any hints?", null);
+        var result = service.streamChat(interviewId, "Any hints?", null, null);
 
         assertThat(result.messageId()).isNotNull();
 
         // splitIntoChunks("Hello World", 20)：11 字元 < 20，整個字串為一個 chunk
         List<String> tokens = result.tokenStream().collectList().block();
         assertThat(tokens).containsExactly("Hello World");
-
-        // 驗證 doOnComplete 後 chatMemory.add() 被呼叫（存入 assistant 回覆）
-        // 明確指定 Message 型別避免 ChatMemory.add(String, Message) 與 add(String, List) 歧義
-        verify(chatMemory, atLeastOnce()).add(eq(interviewId.toString()),
-                (Message) argThat(msg -> msg instanceof AssistantMessage am
-                        && am.getText().equals("Hello World")));
     }
 
     @Test
@@ -185,7 +172,7 @@ class AiChatServiceTest {
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(false);
         AiChatService service = buildService();
 
-        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null))
+        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null, null))
                 .isInstanceOf(AiDisabledException.class)
                 .hasMessageContaining("AI 不可用");
     }
@@ -211,13 +198,13 @@ class AiChatServiceTest {
         when(interviewTimeProvider.isExpired(interviewId)).thenReturn(true);
         AiChatService service = buildService();
 
-        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null))
+        assertThatThrownBy(() -> service.streamChat(interviewId, "Give me a hint", null, null))
                 .isInstanceOf(InterviewExpiredException.class)
                 .hasMessageContaining("時間已到");
     }
 
     @Test
-    @DisplayName("streamChat 無可用模型時應回傳 stub 串流")
+    @DisplayName("streamChat 無可用模型時應回傳 stub 串流並直接寫入 repository")
     void shouldStreamStubWhenNoModels() {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
@@ -226,7 +213,7 @@ class AiChatServiceTest {
         when(modelRegistry.getFirstClient()).thenReturn(Optional.empty());
 
         AiChatService service = buildService();
-        var result = service.streamChat(interviewId, "Hello", null);
+        var result = service.streamChat(interviewId, "Hello", null, null);
 
         assertThat(result.messageId()).isNotNull();
 
@@ -234,7 +221,7 @@ class AiChatServiceTest {
         assertThat(tokens).hasSize(1);
         assertThat(tokens.get(0)).contains("AI assistant is not configured");
 
-        // 驗證 chatMemory.add() 被呼叫：user message + stub assistant message
-        verify(chatMemory, times(2)).add(eq(interviewId.toString()), any(Message.class));
+        // 無 advisor 時直接寫入 repository（user + stub assistant）
+        verify(repository, times(2)).save(any(ConversationMessage.class));
     }
 }

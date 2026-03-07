@@ -275,13 +275,33 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
         // normalizeForMerge 與 mergeProposals 內部使用相同的 normalize，
         // 確保 originalFullContent 與 proposedFullContent 格式一致，DiffViewer 才能正確顯示差異
         const normalizedOriginal = normalizeForMerge(originalFullContent);
+
+        let finalOriginal = normalizedOriginal;
+        let finalProposed = proposedFullContent;
+
+        // 片段級 fallback：當所有 proposals 都比對失敗（連 trimmed-line 也找不到），
+        // 退化為直接展示 AI 提案的 original/proposed 片段 diff，
+        // 讓使用者至少能看到差異，而非空白的 Diff tab。
+        if (skipped === fileChange.proposals.length && fileChange.proposals.length > 0) {
+          console.warn(
+            "[REGISTER_CHANGESET] all proposals skipped, fallback to segment-level diff.\n" +
+            "  first proposal original[:100]:", fileChange.proposals[0]?.original.slice(0, 100)
+          );
+          finalOriginal = fileChange.proposals
+            .map((p) => normalizeForMerge(p.original))
+            .join("\n");
+          finalProposed = fileChange.proposals
+            .map((p) => normalizeForMerge(p.proposed))
+            .join("\n");
+        }
+
         console.log(
           "[REGISTER_CHANGESET] merge result: skipped=", skipped,
-          "changed=", proposedFullContent !== normalizedOriginal,
-          "proposedLen=", proposedFullContent.length
+          "changed=", finalProposed !== finalOriginal,
+          "proposedLen=", finalProposed.length
         );
         const key = resolvedPath ?? fileChange.filePath;
-        fileDiffs.set(key, { originalFullContent: normalizedOriginal, proposedFullContent });
+        fileDiffs.set(key, { originalFullContent: finalOriginal, proposedFullContent: finalProposed });
       }
 
       // 進入獨立 Diff Tab 模式：檔案內容不再被修改，DiffViewer 元件直接讀取 fileDiffs 顯示 diff

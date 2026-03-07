@@ -13,7 +13,6 @@ import com.interview.execution.ExecutionStatus;
 import com.interview.execution.ProjectExecutionRequest;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -44,12 +43,9 @@ class DockerCodeExecutor implements CodeExecutor {
     );
 
     private final DockerClient dockerClient;
-    private final String dockerImage;
 
-    DockerCodeExecutor(DockerClient dockerClient,
-                       @Value("${execution.docker.image:eclipse-temurin:25-jdk}") String dockerImage) {
+    DockerCodeExecutor(DockerClient dockerClient) {
         this.dockerClient = dockerClient;
-        this.dockerImage = dockerImage;
     }
 
     @Override
@@ -76,7 +72,8 @@ class DockerCodeExecutor implements CodeExecutor {
                     .withCpuCount(1L)
                     .withTmpFs(Map.of("/tmp", "rw,nosuid,size=64m"));
 
-            var container = dockerClient.createContainerCmd(dockerImage)
+            // legacy 單檔 API 使用固定 JDK image（不走 question.yaml 路徑）
+            var container = dockerClient.createContainerCmd("eclipse-temurin:25-jdk")
                     .withCmd("bash", "-c", runCmd)
                     .withHostConfig(hostConfig)
                     .exec();
@@ -127,8 +124,8 @@ class DockerCodeExecutor implements CodeExecutor {
                     .withCpuCount(1L)
                     .withTmpFs(Map.of("/tmp", "rw,nosuid,size=128m"));
 
-            String image = request.dockerImage() != null ? request.dockerImage() : this.dockerImage;
-            var container = dockerClient.createContainerCmd(image)
+            // dockerImage 必填，由題目 question.yaml 的 image 欄位提供
+            var container = dockerClient.createContainerCmd(request.dockerImage())
                     .withCmd("bash", "-c", runCmd)
                     .withHostConfig(hostConfig)
                     .exec();

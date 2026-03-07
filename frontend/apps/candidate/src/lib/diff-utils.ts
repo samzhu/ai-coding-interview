@@ -8,6 +8,8 @@
  *   使用 indexOf + slice 替換（非 String.replace），避免 $ 等特殊字元問題。
  *   為讓比對更強健，所有內容先經 normalizeForMerge()（CRLF→LF + 行尾空白移除）處理，
  *   避免 AI 輸出的 original 片段因行尾格式差異而找不到對應位置。
+ *   當 indexOf 仍失敗（例如縮排空格數不一致），會以 findByTrimmedLines() 行級模糊比對
+ *   作為 Fallback 1，找到行範圍後取出 content 中對應的精確文字再替換。
  */
 
 /**
@@ -70,6 +72,48 @@ export interface MergeResult {
 }
 
 /**
+ * 以行級模糊比對尋找 original 片段在 content 中的行範圍。
+ *
+ * 設計說明：indexOf 精確比對在 AI 輸出縮排不一致時會失敗（例如 4 空格 vs 2 空格）。
+ * 此函式將每行 trim() 後進行滑動窗口比對，找到連續匹配的行範圍，
+ * 作為 mergeProposals 的 Fallback 1 策略，大幅提升對 AI 輸出縮排差異的容忍度。
+ * 比對前會去除 original 尾部空行（防止 trailing \n 產生空字串干擾行數）。
+ * 回傳匹配到的 0-based 行索引範圍，或 null（找不到）。
+ */
+export function findByTrimmedLines(
+  content: string,
+  original: string
+): { startLine: number; endLine: number } | null {
+  const contentLines = content.split("\n");
+  let originalLines = original.split("\n");
+
+  // 去除 original 尾部空行（trailing \n split 後產生的空字串）
+  while (originalLines.length > 0 && originalLines[originalLines.length - 1].trim() === "") {
+    originalLines = originalLines.slice(0, -1);
+  }
+
+  const n = contentLines.length;
+  const m = originalLines.length;
+  if (m === 0 || m > n) return null;
+
+  const origTrimmed = originalLines.map((l) => l.trim());
+
+  for (let i = 0; i <= n - m; i++) {
+    let match = true;
+    for (let j = 0; j < m; j++) {
+      if (contentLines[i + j].trim() !== origTrimmed[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return { startLine: i, endLine: i + m - 1 };
+    }
+  }
+  return null;
+}
+
+/**
  * 安全替換字串第一個出現位置（使用 indexOf + slice）。
  * 不使用 String.replace，避免 replacement 中 $1、$& 等特殊字元被誤解釋。
  */
@@ -103,6 +147,8 @@ export function mergeProposals(
 ): MergeResult {
   // 統一 normalize：確保 fileContent 與 original 使用相同格式進行比對
   const normContent = normalizeForMerge(fileContent);
+  // 預先 split，供 Fallback 1 行級比對使用（避免在迴圈中重複 split）
+  const contentLines = normContent.split("\n");
 
   type Located = {
     proposed: string;
@@ -119,10 +165,35 @@ export function mergeProposals(
     const idx = normContent.indexOf(normOriginal);
     if (idx === -1) {
       console.warn(
-        "[mergeProposals] original not found (after normalize), skipping.\n" +
-        "  original[:80]:", normOriginal.slice(0, 80), "\n" +
-        "  fileContent[:80]:", normContent.slice(0, 80)
+        "[mergeProposals] indexOf failed (after normalize), trying trimmed-line fallback.\n" +
+        "  original[:120]:", normOriginal.slice(0, 120), "\n" +
+        "  fileContent[:120]:", normContent.slice(0, 120)
       );
+
+      // Fallback 1：行級模糊比對（trim 每行後滑動窗口比對）
+      // 設計說明：AI 重建 original 時常有縮排空格數差異，
+      // 取出 content 中對應行的「原始文字」（含真實縮排）後再以 indexOf 定位，
+      // 確保 start/end 座標與精確比對路徑使用相同的座標系。
+      const lineMatch = findByTrimmedLines(normContent, normOriginal);
+      if (lineMatch !== null) {
+        const { startLine, endLine } = lineMatch;
+        const matchedText = contentLines.slice(startLine, endLine + 1).join("\n");
+        const idx2 = normContent.indexOf(matchedText);
+        if (idx2 !== -1) {
+          console.log(
+            "[mergeProposals] Fallback 1 (trimmed-line) succeeded, lines",
+            startLine, "-", endLine
+          );
+          located.push({
+            proposed: normProposed,
+            start: idx2,
+            end: idx2 + matchedText.length,
+          });
+          continue;
+        }
+      }
+
+      console.warn("[mergeProposals] all strategies failed for this proposal");
       skipped++;
       continue;
     }
