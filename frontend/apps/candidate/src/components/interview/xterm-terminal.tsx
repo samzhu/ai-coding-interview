@@ -23,8 +23,9 @@ const XtermInner = dynamic(() => import("./xterm-terminal-inner"), {
 interface XtermTerminalProps {
   interviewId: string;
   isActive: boolean;
+  initialCommand?: string;
 }
 
-export function XtermTerminal({ interviewId, isActive }: XtermTerminalProps) {
-  return <XtermInner interviewId={interviewId} isActive={isActive} />;
+export function XtermTerminal({ interviewId, isActive, initialCommand }: XtermTerminalProps) {
+  return <XtermInner interviewId={interviewId} isActive={isActive} initialCommand={initialCommand} />;
 }

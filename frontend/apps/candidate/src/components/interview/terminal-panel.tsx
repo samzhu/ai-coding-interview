@@ -11,7 +11,7 @@
  * - 每個 bash tab 使用時間戳作為唯一 ID，避免 React key 衝突。
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { XtermTerminal } from "./xterm-terminal";
 import { useInterview } from "@/contexts/interview-context";
 
@@ -38,6 +38,16 @@ export function TerminalPanel({
   const [activeTabId, setActiveTabId] = useState<ActiveTabId>("test-results");
   const [bashTabs, setBashTabs] = useState<BashTab[]>([]);
   const [bashCounter, setBashCounter] = useState(0);
+
+  // 當 isRunning 從 false 變 true 時，自動切換到「測試結果」tab
+  const { state } = useInterview();
+  const prevRunningRef = useRef(false);
+  useEffect(() => {
+    if (state.isRunning && !prevRunningRef.current) {
+      setActiveTabId("test-results");
+    }
+    prevRunningRef.current = state.isRunning;
+  }, [state.isRunning]);
 
   function addBashTab() {
     const num = bashCounter + 1;
@@ -173,10 +183,39 @@ export function TerminalPanel({
   );
 }
 
-/** 測試結果顯示區（原 ExecutionOutput 的內容，抽取為獨立元件方便在 tab 內使用）。 */
+/**
+ * 測試結果顯示區。三種狀態：
+ * 1. isRunning（有 testCommand）→ 嵌入 XtermTerminal 即時串流指令輸出，清空舊結果
+ * 2. 有結果 → 靜態顯示 PASSED/FAILED badge + output
+ * 3. 無結果 → placeholder 提示
+ *
+ * 設計說明：Run 按鈕同時觸發 submit()（取得 checkpoint 評分）和 xterm 串流（即時輸出回饋）。
+ * 兩者在同一 Docker container 中各自執行一次 testCommand（測試跑兩次），MVP 可接受。
+ * isRunning 從 true 變 false（submit 回傳）時，xterm 自動 unmount，切回靜態結果顯示。
+ */
 function TestResultsContent() {
   const { state } = useInterview();
-  const { checkpoint, lastExecution } = state;
+  const { checkpoint, lastExecution, isRunning, interviewId } = state;
+
+  // Running 狀態：顯示執行中 spinner + testCommand 名稱
+  // 設計說明：不在此處同時送 testCommand 到 xterm，避免與 submit() 後端執行產生雙重 Gradle 鎖定衝突。
+  // Gradle 程序有排他 build lock，兩個並行 `./gradlew` 會導致 daemon 崩潰（OOM/killed）。
+  // 等 submit() 完成後再展示靜態結果，確保測試只跑一次且結果完整。
+  if (isRunning) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 gap-3 text-xs text-[#858585]">
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-3 h-3 border-2 border-[#007acc] border-t-transparent rounded-full animate-spin" />
+          <span className="text-[#cccccc]">正在執行測試...</span>
+        </div>
+        {checkpoint?.testCommand && (
+          <code className="text-[#4ec9b0] bg-[#252526] px-2 py-1 rounded text-[11px] max-w-xs truncate">
+            {checkpoint.testCommand}
+          </code>
+        )}
+      </div>
+    );
+  }
 
   const output = checkpoint?.executionOutput ?? lastExecution?.stdout ?? null;
   const stderr = lastExecution?.stderr;

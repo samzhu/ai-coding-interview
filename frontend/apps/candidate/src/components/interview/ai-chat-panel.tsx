@@ -175,16 +175,17 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
 
   // 判斷 AI 是否正在思考（顯示乳牛動畫）：
   // - submitted：已送出但伺服器尚未回應任何 SSE 事件
-  // - streaming 且尚無文字也無 tool 事件：server 正在準備（tools 開始前的短暫空窗）
-  // 一旦 tool 事件開始到達（data-tool-invocation），改由 ToolInvocationBadge 提供視覺回饋，
-  // 停止顯示 ThinkingAnimation，避免動畫與 tool 狀態卡片同時出現造成視覺雜訊。
+  // - streaming 且尚無文字：AI 正在執行工具或生成回覆（可能持續 5-30 秒）
+  // 動畫與 ToolInvocationBadge 同時顯示，提供雙重視覺回饋：
+  //   工具卡片 = 具體進度（正在做什麼），動畫 = 整體狀態（AI 仍在處理中）。
+  // 一旦文字串流開始（lastHasText = true），動畫消失，文字接手。
   const lastMsg = messages.at(-1);
   const lastIsAssistant = lastMsg?.role === "assistant";
   const lastHasText = lastIsAssistant && getTextContent(lastMsg!) !== "";
   const lastHasToolEvents = lastIsAssistant && getToolInvocations(lastMsg!).size > 0;
   const isThinking =
     status === "submitted" ||
-    (status === "streaming" && lastIsAssistant && !lastHasText && !lastHasToolEvents);
+    (status === "streaming" && lastIsAssistant && !lastHasText);
 
   // 思考中計時器，重置條件為 isThinking 從 true 轉 false
   const [thinkingSeconds, setThinkingSeconds] = useState(0);
@@ -203,6 +204,16 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
       sendMessage({ text });
     });
   }, [registerSendAiMessage, sendMessage]);
+
+  // 錯誤發生時輸出完整細節到 console，方便開發除錯
+  useEffect(() => {
+    if (!error) return;
+    console.error("[AiChatPanel] useChat error:", error);
+    // 嘗試印出 cause（AI SDK 有時把 HTTP response body 放在 cause）
+    if ((error as Error & { cause?: unknown }).cause) {
+      console.error("[AiChatPanel] error.cause:", (error as Error & { cause?: unknown }).cause);
+    }
+  }, [error]);
 
   useEffect(() => {
     apiGet<AiModelInfo[]>("/ai/models")
@@ -333,9 +344,24 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
           </Conversation>
 
           {error && (
-            <p className="text-xs text-red-400 text-center px-3 py-1 shrink-0">
-              {error.message}
-            </p>
+            <details className="mx-3 mb-2 rounded border border-red-900/50 bg-red-950/30 text-xs shrink-0 open:pb-2">
+              <summary className="cursor-pointer px-3 py-1.5 text-red-400 select-none list-none flex items-center gap-1.5">
+                <span className="text-red-500">⚠</span>
+                <span>{error.message || "AI 回應發生錯誤"}</span>
+                <span className="ml-auto text-red-600 text-[10px]">展開詳情 ▾</span>
+              </summary>
+              <pre className="mx-3 mt-1 text-[10px] text-red-300 whitespace-pre-wrap break-all leading-relaxed max-h-40 overflow-y-auto">
+                {[
+                  error.name && `[${error.name}]`,
+                  error.message,
+                  (error as Error & { cause?: unknown }).cause != null &&
+                    `cause: ${JSON.stringify((error as Error & { cause?: unknown }).cause, null, 2)}`,
+                  error.stack,
+                ]
+                  .filter(Boolean)
+                  .join("\n")}
+              </pre>
+            </details>
           )}
 
           <div className="p-3 border-t border-[#333] shrink-0">

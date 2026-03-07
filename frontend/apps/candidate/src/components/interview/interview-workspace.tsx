@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiPost } from "@interview/shared/lib/api-client";
 import { CodeEditor } from "@/components/code-editor/code-editor";
+import { DiffViewer } from "./diff-viewer";
 import { TerminalPanel } from "./terminal-panel";
 import { FileTabs } from "./file-tabs";
 import { FileExplorer } from "./file-explorer";
@@ -36,13 +37,6 @@ export function InterviewWorkspace({
   const rightPanelResize = useResizablePanel({ initialWidth: 320, minWidth: 240, maxWidth: 600, reversed: true });
   const terminalResize = useResizableHeight({ initialHeight: 192, minHeight: 100, maxHeight: 500 });
 
-  // 計算目前 active 檔案的 diffOriginal（多檔案 diff 設計）：
-  // 若 activeFilePath 是此 ChangeSet 中有 diff 的檔案，顯示對應的 originalFullContent；
-  // 否則為 null（不進入 diff 模式）。這讓使用者可透過 FileTabs 切換查看不同檔案的 diff。
-  const diffOriginal = state.diffReview
-    ? (state.diffReview.fileDiffs.get(state.activeFilePath ?? "")?.originalFullContent ?? null)
-    : null;
-
   const handleExpired = useCallback(async () => {
     try {
       await apiPost(`/interviews/${interviewId}/complete`);
@@ -53,12 +47,13 @@ export function InterviewWorkspace({
   }, [interviewId, router]);
 
   async function handleRun() {
+    // 先展開終端面板：submit() 會觸發 setRunning(true)，導致 TerminalPanel 切換到「測試結果」tab
+    // 並嵌入 xterm 開始串流；autoExpandTerminal 需在此之前執行確保面板已展開
+    autoExpandTerminal();
     try {
       await submit();
-      autoExpandTerminal();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "執行失敗，請稍後再試");
-      autoExpandTerminal();
     }
   }
 
@@ -134,14 +129,16 @@ export function InterviewWorkspace({
           <div className="flex-1 flex flex-col overflow-hidden border-r border-[#333]">
             <FileTabs />
             <div className="flex-1 overflow-hidden">
-              <CodeEditor
-                value={state.code}
-                onChange={handleCodeChange}
-                language={detectLanguage(state.activeFilePath)}
-                readOnly={state.diffReview != null}
-                className="h-full"
-                diffOriginal={diffOriginal}
-              />
+              {state.diffTabActive && state.diffReview ? (
+                <DiffViewer fileDiffs={state.diffReview.fileDiffs} />
+              ) : (
+                <CodeEditor
+                  value={state.code}
+                  onChange={handleCodeChange}
+                  language={detectLanguage(state.activeFilePath)}
+                  className="h-full"
+                />
+              )}
             </div>
           </div>
 

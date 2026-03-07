@@ -19,7 +19,7 @@ import {
   type ChangeSet,
   type EditProposalData,
 } from "@/lib/changeset";
-import { mergeProposals } from "@/lib/diff-utils";
+import { mergeProposals, normalizeForMerge } from "@/lib/diff-utils";
 
 /**
  * DiffReviewState — 多檔案 diff 審查狀態
@@ -51,6 +51,8 @@ interface InterviewState {
   lastExecution: ExecutionResponse | null;
   // VSCode 風格 inline diff 審查狀態，null 表示未進入 diff 模式
   diffReview: DiffReviewState | null;
+  // 獨立 Diff Tab 是否 active（true 時編輯器區域顯示 DiffViewer）
+  diffTabActive: boolean;
   // 所有 ChangeSets（key = messageId），供 ChangeSetCard 讀取狀態
   changeSets: Map<string, ChangeSet>;
   // 目前 pending（等待使用者決定）的 ChangeSet messageId，null 表示無
@@ -73,6 +75,7 @@ type InterviewAction =
   | { type: "REGISTER_CHANGESET"; payload: { messageId: string; proposals: EditProposalData[] } }
   | { type: "APPLY_CHANGESET"; payload: { messageId: string } }
   | { type: "REJECT_CHANGESET"; payload: { messageId: string } }
+  | { type: "SET_DIFF_TAB_ACTIVE"; payload: boolean }
   | {
       type: "CHECKPOINT_RESULT";
       payload: { result: CheckpointResultResponse; execution: ExecutionResponse | null };
@@ -210,7 +213,14 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
     case "SET_SUBMITTING":
       return { ...state, isSubmitting: action.payload };
     case "SET_RUNNING":
-      return { ...state, isRunning: action.payload };
+      if (action.payload) {
+        // 開始執行時清除上次結果，避免殘留「測試失敗」badge 讓使用者分不清是這次還是上次的
+        const clearedCheckpoint = state.checkpoint
+          ? { ...state.checkpoint, executionOutput: null, status: "IN_PROGRESS" as const }
+          : state.checkpoint;
+        return { ...state, isRunning: true, lastExecution: null, checkpoint: clearedCheckpoint };
+      }
+      return { ...state, isRunning: false };
     case "SET_EXECUTION":
       return { ...state, lastExecution: action.payload };
     case "SET_STATUS":
@@ -219,25 +229,13 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
     case "REGISTER_CHANGESET": {
       const { messageId, proposals } = action.payload;
 
-      // 若有上一個 pending changeset，先隱性拒絕它（還原檔案至原始內容）
-      let currentFiles = new Map(state.files);
-      let currentCode = state.code;
+      // 若有上一個 pending changeset，隱性拒絕它（僅標記狀態，無需還原檔案）
+      // 新設計：REGISTER_CHANGESET 不再修改 state.files，檔案始終保持原始內容，
+      // 所以不需要像舊設計一樣從 fileDiffs.originalFullContent 還原。
       const updatedChangeSets = new Map(state.changeSets);
-
-      if (state.pendingChangeSetId && state.diffReview) {
-        const prevId = state.pendingChangeSetId;
-        const prevCs = updatedChangeSets.get(prevId);
-        if (prevCs) updatedChangeSets.set(prevId, { ...prevCs, status: "rejected" });
-        // 還原上一個 changeset 影響的檔案
-        for (const [filePath, fileDiff] of state.diffReview.fileDiffs) {
-          const file = currentFiles.get(filePath);
-          if (file) {
-            currentFiles.set(filePath, { ...file, content: fileDiff.originalFullContent });
-            if (filePath === state.activeFilePath) {
-              currentCode = fileDiff.originalFullContent;
-            }
-          }
-        }
+      if (state.pendingChangeSetId) {
+        const prevCs = updatedChangeSets.get(state.pendingChangeSetId);
+        if (prevCs) updatedChangeSets.set(state.pendingChangeSetId, { ...prevCs, status: "rejected" });
       }
 
       // 建立新 ChangeSet（按檔案分組，計算 stats）
@@ -247,8 +245,6 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
       if (changeSet.fileChanges.length === 0) {
         return {
           ...state,
-          files: currentFiles,
-          code: currentCode,
           changeSets: updatedChangeSets,
           pendingChangeSetId: messageId,
         };
@@ -257,89 +253,92 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
       // 計算每個檔案的 fileDiff（originalFullContent + proposedFullContent）
       // proposedFullContent 由 mergeProposals 批次套用同檔案所有 proposals 計算得出
       // key 統一使用 resolvedPath（與 state.files 的 key 一致），避免 AI 相對/絕對路徑不一致
+      // 注意：直接使用 state.files（原始內容），不再需要 currentFiles 副本
       const fileDiffs = new Map<
         string,
         { originalFullContent: string; proposedFullContent: string }
       >();
       for (const fileChange of changeSet.fileChanges) {
-        const resolvedPath = resolveFilePath(currentFiles, fileChange.filePath);
-        const file = resolvedPath ? currentFiles.get(resolvedPath) : undefined;
+        const resolvedPath = resolveFilePath(state.files, fileChange.filePath);
+        const file = resolvedPath ? state.files.get(resolvedPath) : undefined;
         const originalFullContent = file?.content ?? "";
-        const { result: proposedFullContent } = mergeProposals(
+        console.log(
+          "[REGISTER_CHANGESET] filePath=", fileChange.filePath,
+          "resolvedPath=", resolvedPath,
+          "fileContentLen=", originalFullContent.length,
+          "proposals=", fileChange.proposals.length
+        );
+        const { result: proposedFullContent, skipped } = mergeProposals(
           originalFullContent,
           fileChange.proposals
         );
+        // normalizeForMerge 與 mergeProposals 內部使用相同的 normalize，
+        // 確保 originalFullContent 與 proposedFullContent 格式一致，DiffViewer 才能正確顯示差異
+        const normalizedOriginal = normalizeForMerge(originalFullContent);
+        console.log(
+          "[REGISTER_CHANGESET] merge result: skipped=", skipped,
+          "changed=", proposedFullContent !== normalizedOriginal,
+          "proposedLen=", proposedFullContent.length
+        );
         const key = resolvedPath ?? fileChange.filePath;
-        fileDiffs.set(key, { originalFullContent, proposedFullContent });
+        fileDiffs.set(key, { originalFullContent: normalizedOriginal, proposedFullContent });
       }
 
-      // 更新 state.files 為 proposed 內容（讓編輯器顯示 proposed，diff 對比 original）
-      for (const [filePath, fileDiff] of fileDiffs) {
-        const file = currentFiles.get(filePath);
-        if (file) {
-          currentFiles.set(filePath, { ...file, content: fileDiff.proposedFullContent });
-        }
-      }
-
-      // 進入 diff 模式，展示第一個異動檔案
-      // 優先使用 fileDiffs 的 key（已 resolved），而非 fileChanges 的原始 filePath
-      const firstFilePath = fileDiffs.keys().next().value ?? changeSet.fileChanges[0].filePath;
-      const firstFileDiff = fileDiffs.get(firstFilePath)!;
-      const openFiles = state.openFiles.includes(firstFilePath)
-        ? state.openFiles
-        : [...state.openFiles, firstFilePath];
-
+      // 進入獨立 Diff Tab 模式：檔案內容不再被修改，DiffViewer 元件直接讀取 fileDiffs 顯示 diff
       return {
         ...state,
-        files: currentFiles,
-        code: firstFileDiff.proposedFullContent,
-        openFiles,
-        activeFilePath: firstFilePath,
         changeSets: updatedChangeSets,
         pendingChangeSetId: messageId,
         diffReview: { changeSetMessageId: messageId, fileDiffs },
+        diffTabActive: true,
       };
     }
 
     case "APPLY_CHANGESET": {
-      // 標記 ChangeSet 為已套用，清除 diff 模式。
-      // 實際的檔案寫入（apiPut + setFileContent）已由 ChangeSetCard 處理完畢。
+      // 標記 ChangeSet 為已套用，從 diffReview.fileDiffs 讀取 proposed 內容寫入 state.files，
+      // 清除 diffReview 與 diffTabActive。
+      // 新設計：REGISTER_CHANGESET 不再修改 state.files，所以這裡才是真正寫入 proposed 內容的時機。
+      // ChangeSetCard 的 apiPut 寫回後端仍由自身處理（reducer 不負責非同步操作）。
       const { messageId } = action.payload;
       const newChangeSets = new Map(state.changeSets);
       const cs = newChangeSets.get(messageId);
       if (cs) newChangeSets.set(messageId, { ...cs, status: "applied" });
-      return {
-        ...state,
-        changeSets: newChangeSets,
-        pendingChangeSetId: state.pendingChangeSetId === messageId ? null : state.pendingChangeSetId,
-        diffReview:
-          state.diffReview?.changeSetMessageId === messageId ? null : state.diffReview,
-      };
-    }
 
-    case "REJECT_CHANGESET": {
-      // 拒絕提案：還原檔案至 originalFullContent，清除 diff 模式。
-      // 因為 REGISTER_CHANGESET 已把 state.files 更新為 proposed 內容，
-      // 這裡需要從 fileDiffs 還原。後端無需操作（proposed 內容從未寫入後端）。
-      const { messageId } = action.payload;
-      const newChangeSets = new Map(state.changeSets);
-      const cs = newChangeSets.get(messageId);
-      if (cs) newChangeSets.set(messageId, { ...cs, status: "rejected" });
-
-      let newFiles = new Map(state.files);
+      let newFiles = state.files;
       let newCode = state.code;
-
       if (state.diffReview?.changeSetMessageId === messageId) {
-        for (const [filePath, fileDiff] of state.diffReview.fileDiffs) {
+        newFiles = new Map(state.files);
+        for (const [filePath, { proposedFullContent }] of state.diffReview.fileDiffs) {
           const file = newFiles.get(filePath);
           if (file) {
-            newFiles.set(filePath, { ...file, content: fileDiff.originalFullContent });
+            newFiles.set(filePath, { ...file, content: proposedFullContent });
             if (filePath === state.activeFilePath) {
-              newCode = fileDiff.originalFullContent;
+              newCode = proposedFullContent;
             }
           }
         }
       }
+
+      return {
+        ...state,
+        files: newFiles,
+        code: newCode,
+        changeSets: newChangeSets,
+        pendingChangeSetId: state.pendingChangeSetId === messageId ? null : state.pendingChangeSetId,
+        diffReview:
+          state.diffReview?.changeSetMessageId === messageId ? null : state.diffReview,
+        diffTabActive: false,
+      };
+    }
+
+    case "REJECT_CHANGESET": {
+      // 拒絕提案：清除 diffReview 與 diffTabActive。
+      // 新設計：REGISTER_CHANGESET 不再修改 state.files，
+      // 所以不需要從 fileDiffs.originalFullContent 還原檔案。
+      const { messageId } = action.payload;
+      const newChangeSets = new Map(state.changeSets);
+      const cs = newChangeSets.get(messageId);
+      if (cs) newChangeSets.set(messageId, { ...cs, status: "rejected" });
 
       return {
         ...state,
@@ -348,10 +347,12 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
           state.pendingChangeSetId === messageId ? null : state.pendingChangeSetId,
         diffReview:
           state.diffReview?.changeSetMessageId === messageId ? null : state.diffReview,
-        files: newFiles,
-        code: newCode,
+        diffTabActive: false,
       };
     }
+
+    case "SET_DIFF_TAB_ACTIVE":
+      return { ...state, diffTabActive: action.payload };
 
     case "CHECKPOINT_RESULT": {
       const { result } = action.payload;
@@ -398,8 +399,10 @@ interface InterviewContextValue {
   registerChangeSet: (messageId: string, proposals: EditProposalData[]) => void;
   /** 使用者同意 → 標記 applied，清除 diff 模式（實際 apiPut 由 ChangeSetCard 處理） */
   applyChangeSet: (messageId: string) => void;
-  /** 使用者拒絕 → 還原檔案內容，清除 diff 模式 */
+  /** 使用者拒絕 → 清除 diff 模式（檔案從未被修改，無需還原） */
   rejectChangeSet: (messageId: string) => void;
+  /** 手動切換 Diff tab 的 active 狀態（點擊 Diff tab 或一般 file tab 時呼叫） */
+  setDiffTabActive: (active: boolean) => void;
   // 由 AiChatPanel 透過 registerSendAiMessage 注入後，讓其他元件可送出 AI 訊息。
   // 若 AiChatPanel 尚未掛載則呼叫為 no-op（ref 尚未被設定）。
   sendAiMessage: (text: string) => void;
@@ -444,6 +447,7 @@ export function InterviewProvider({
     isRunning: false,
     lastExecution: null,
     diffReview: null,
+    diffTabActive: false,
     changeSets: new Map<string, ChangeSet>(),
     pendingChangeSetId: null,
   });
@@ -518,6 +522,10 @@ export function InterviewProvider({
     dispatch({ type: "REJECT_CHANGESET", payload: { messageId } });
   }, []);
 
+  const setDiffTabActive = useCallback((active: boolean) => {
+    dispatch({ type: "SET_DIFF_TAB_ACTIVE", payload: active });
+  }, []);
+
   // sendAiMessage 由 AiChatPanel 透過 registerSendAiMessage 注入。
   // 使用 ref + stable wrapper，讓外部元件呼叫時永遠取到最新的 append 函式，
   // 且不會因 ref 更新而觸發不必要的 context re-render。
@@ -549,6 +557,7 @@ export function InterviewProvider({
         registerChangeSet,
         applyChangeSet,
         rejectChangeSet,
+        setDiffTabActive,
         sendAiMessage,
         registerSendAiMessage,
       }}

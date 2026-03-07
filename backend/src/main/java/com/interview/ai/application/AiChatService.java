@@ -114,8 +114,12 @@ public class AiChatService {
         String conversationId = interviewId.toString();
 
         // 將用戶訊息存入記憶
-        chatMemory.add(conversationId, new UserMessage(userMessage));
-        eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.USER, userMessage));
+        try {
+            chatMemory.add(conversationId, new UserMessage(userMessage));
+            eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.USER, userMessage));
+        } catch (Exception e) {
+            log.error("Failed to save user message for interview {}", interviewId, e);
+        }
 
         UUID assistantMsgId = UUID.randomUUID();
         String resolvedModelId = resolveModelId(interviewId, modelIdOverride);
@@ -161,14 +165,28 @@ public class AiChatService {
             toolContextMap.put("toolSseEmitter", toolSseEmitter);
         }
         Flux<String> stream = Flux.defer(() -> {
+                    long t0 = System.currentTimeMillis();
+                    log.info("[AI-DIAG] interview={} .call() starting (model={})", interviewId, resolvedModelId);
                     String fullContent = finalPromptSpec
                             .messages(conversationMessages)
                             .tools(workspaceTools)
                             .toolContext(toolContextMap)
                             .call()
                             .content();
+                    long elapsed = System.currentTimeMillis() - t0;
+                    log.info("[AI-DIAG] interview={} .call() completed in {}ms, content={}",
+                            interviewId, elapsed,
+                            fullContent == null ? "null" : "length=" + fullContent.length());
+                    // .call().content() 可能在多輪 tool calling 後回傳 null（已觀察到此現象），
+                    // 給出 fallback 訊息避免前端收到空串流（只有 text-start/text-end 無 text-delta）
+                    if (fullContent == null || fullContent.isBlank()) {
+                        log.warn("[AI-DIAG] interview={} empty content from model, using fallback", interviewId);
+                        fullContent = "（AI 已完成工具分析，但未產生文字回覆。請再試一次或換個方式提問。）";
+                    }
+                    List<String> chunks = splitIntoChunks(fullContent, 20);
+                    log.debug("[AI-DIAG] interview={} split into {} chunks", interviewId, chunks.size());
                     // 切分為小段（每段約 20 字元）模擬 token stream
-                    return Flux.fromIterable(splitIntoChunks(fullContent, 20));
+                    return Flux.fromIterable(chunks);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnNext(fullResponse::append)
@@ -180,13 +198,14 @@ public class AiChatService {
                                 .content(fullResponse.toString())
                                 .properties(Map.of("model", resolvedModelId))
                                 .build());
+                        log.info("[AI-DIAG] interview={} assistant saved, length={}", interviewId, fullResponse.length());
                         eventPublisher.publishEvent(new AiChatMessageEvent(
                                 interviewId, MessageType.ASSISTANT, fullResponse.toString()));
                     } catch (Exception e) {
                         log.error("Failed to save assistant message after streaming", e);
                     }
                 })
-                .doOnError(e -> log.error("AI stream failed for interview {}", interviewId, e));
+                .doOnError(e -> log.error("AI stream failed for interview {} (model={})", interviewId, resolvedModelId, e));
 
         return new StreamingChatResult(stream, assistantMsgId);
     }

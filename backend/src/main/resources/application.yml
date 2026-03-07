@@ -12,6 +12,10 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+    async:
+      # SSE 串流（AI 聊天）可能持續數分鐘（AI tool 執行 gradle test 等長時間指令），
+      # -1 表示不設超時，讓串流自然結束或由前端關閉連線。
+      request-timeout: -1
 aci:
   models:
     - id: gemini-2.5-flash
@@ -40,7 +44,7 @@ management:
 
 execution:
   docker:
-    host: ${DOCKER_HOST:unix:///var/run/docker.sock}
+    host: ${DOCKER_HOST:tcp://localhost:2375}
     tls-verify: ${DOCKER_TLS_VERIFY:false}
     cert-path: ${DOCKER_CERT_PATH:}
     image: ${EXECUTION_DOCKER_IMAGE:eclipse-temurin:25-jdk}

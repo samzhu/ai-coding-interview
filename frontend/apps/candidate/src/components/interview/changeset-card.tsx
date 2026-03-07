@@ -37,7 +37,7 @@ interface ChangeSetCardProps {
 }
 
 export function ChangeSetCard({ interviewId, messageId, proposals }: ChangeSetCardProps) {
-  const { state, setFileContent, applyChangeSet, rejectChangeSet } = useInterview();
+  const { state, applyChangeSet, rejectChangeSet } = useInterview();
   const [isApplying, setIsApplying] = useState(false);
 
   // 從 state 讀取此 ChangeSet 的狀態（pending/applied/rejected）
@@ -59,12 +59,13 @@ export function ChangeSetCard({ interviewId, messageId, proposals }: ChangeSetCa
     }
     setIsApplying(true);
     try {
+      // 先 apiPut 寫回後端（每個異動檔案各一次）
+      // 接著 dispatch APPLY_CHANGESET：reducer 負責將 proposedFullContent 寫入 state.files
       for (const [filePath, { proposedFullContent }] of diffReview.fileDiffs) {
         await apiPut<void>(
           `/interviews/${interviewId}/files/content?path=${encodeURIComponent(filePath)}`,
           { content: proposedFullContent }
         );
-        setFileContent(filePath, proposedFullContent);
       }
       applyChangeSet(messageId);
     } catch (err) {

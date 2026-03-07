@@ -1,6 +1,8 @@
 package com.interview.ai.application;
 
 import com.interview.interview.InterviewStartedEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.context.event.EventListener;
@@ -8,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 class AiSessionInitializer {
+
+    private static final Logger log = LoggerFactory.getLogger(AiSessionInitializer.class);
 
     private static final String SYSTEM_PROMPT =
             "You are an AI interview assistant helping a software engineering candidate solve coding problems.\n\n" +
@@ -58,7 +62,11 @@ class AiSessionInitializer {
 
     @EventListener
     public void onInterviewStarted(InterviewStartedEvent event) {
-        // 使用 ChatMemory 介面寫入 SYSTEM prompt，與 Spring AI 官方設計保持一致
-        chatMemory.add(event.interviewId().toString(), new SystemMessage(SYSTEM_PROMPT));
+        try {
+            // 使用 ChatMemory 介面寫入 SYSTEM prompt，與 Spring AI 官方設計保持一致
+            chatMemory.add(event.interviewId().toString(), new SystemMessage(SYSTEM_PROMPT));
+        } catch (Exception e) {
+            log.error("Failed to initialize AI session for interview {}", event.interviewId(), e);
+        }
     }
 }

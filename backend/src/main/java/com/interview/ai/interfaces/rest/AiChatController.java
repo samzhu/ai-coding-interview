@@ -4,6 +4,8 @@ import com.interview.ai.application.AiChatService;
 import com.interview.ai.internal.EditProposal;
 import com.interview.ai.internal.EditProposalParser;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,12 +22,15 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 @RestController
 @RequestMapping("/api/v1/interviews/{interviewId}/ai")
 class AiChatController {
+
+    private static final Logger log = LoggerFactory.getLogger(AiChatController.class);
 
     private final AiChatService service;
     private final EditProposalParser editProposalParser;
@@ -46,6 +51,7 @@ class AiChatController {
     @PostMapping(value = "/chat/stream")
     ResponseEntity<StreamingResponseBody> streamChat(@PathVariable UUID interviewId,
                                                      @RequestBody StreamChatRequest request) {
+        log.info("[AI-DIAG] interview={} streamChat request, modelId={}", interviewId, request.modelId());
         String userMessage = request.extractLastUserMessage();
         UUID msgId = UUID.randomUUID();
         UUID textId = UUID.randomUUID();
@@ -75,7 +81,7 @@ class AiChatController {
                         writer.write(sseLine);
                         writer.flush();
                     } catch (IOException e) {
-                        // client disconnected — ignore silently
+                        log.debug("Tool SSE write failed (client disconnected): {}", e.getMessage());
                     }
                 };
 
@@ -83,30 +89,41 @@ class AiChatController {
 
                 CountDownLatch latch = new CountDownLatch(1);
                 AtomicReference<Throwable> errorRef = new AtomicReference<>();
+                AtomicInteger deltaCount = new AtomicInteger(0);
 
                 result.tokenStream()
                         .publishOn(Schedulers.boundedElastic())
                         .subscribe(
                                 token -> {
                                     try {
+                                        deltaCount.incrementAndGet();
                                         String deltaJson = objectMapper.writeValueAsString(
                                                 Map.of("type", "text-delta", "id", textId.toString(), "delta", token));
                                         writer.write("data: " + deltaJson + "\n\n");
                                         writer.flush();
                                         fullResponse.append(token);
                                     } catch (Exception ignored) {
-                                        // client disconnected — stop silently
+                                        log.debug("Token write failed (client disconnected): {}", ignored.getMessage());
                                         latch.countDown();
                                     }
                                 },
                                 error -> {
+                                    log.error("AI stream error for interview {}", interviewId, error);
                                     errorRef.set(error);
                                     latch.countDown();
                                 },
-                                latch::countDown
+                                () -> {
+                                    log.info("[AI-DIAG] interview={} stream done, deltas={} length={}",
+                                            interviewId, deltaCount.get(), fullResponse.length());
+                                    latch.countDown();
+                                }
                         );
 
-                latch.await(60, TimeUnit.SECONDS);
+                boolean completed = latch.await(60, TimeUnit.SECONDS);
+                if (!completed) {
+                    log.warn("[AI-DIAG] interview={} TIMEOUT 60s, deltas={} length={}",
+                            interviewId, deltaCount.get(), fullResponse.length());
+                }
 
                 if (errorRef.get() != null) {
                     // Gemini 或其他非同步錯誤：送錯誤文字，不要直接關閉連線
@@ -119,7 +136,13 @@ class AiChatController {
                 }
 
             } catch (Exception e) {
-                // 業務例外（AI 停用、面試超時等）：送錯誤文字，避免 network error
+                // 業務例外（AI 停用、面試超時等）送錯誤文字避免 network error；其餘例外記錄完整 stack trace
+                if (e instanceof com.interview.ai.application.AiDisabledException
+                        || e instanceof com.interview.interview.InterviewExpiredException) {
+                    log.warn("AI chat rejected for interview {}: {}", interviewId, e.getMessage());
+                } else {
+                    log.error("Unexpected error in AI stream for interview {}", interviewId, e);
+                }
                 String errMsg = e.getMessage() != null ? e.getMessage() : "發生錯誤，請稍後再試";
                 String deltaJson = objectMapper.writeValueAsString(
                         Map.of("type", "text-delta", "id", textId.toString(), "delta", errMsg));
@@ -132,6 +155,7 @@ class AiChatController {
 
             // 解析 AI 回應中的 edit_proposal 區塊，以 data 事件傳至前端供候選人審查套用
             List<EditProposal> proposals = editProposalParser.parse(fullResponse.toString());
+            log.info("[AI-DIAG] interview={} editProposals={}", interviewId, proposals.size());
             for (EditProposal proposal : proposals) {
                 String dataEvent = buildEditProposalDataEvent(proposal);
                 writer.write("data: " + dataEvent + "\n\n");
@@ -141,6 +165,7 @@ class AiChatController {
             writer.flush();
             writer.write("data: [DONE]\n\n");
             writer.flush();
+            log.info("[AI-DIAG] interview={} SSE closed", interviewId);
         };
 
         return ResponseEntity.ok()

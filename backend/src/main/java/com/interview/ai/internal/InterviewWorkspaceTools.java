@@ -61,6 +61,7 @@ public class InterviewWorkspaceTools {
         UUID interviewId = extractInterviewId(toolContext);
         String callId = UUID.randomUUID().toString();
         emitToolEvent(toolContext, callId, "listFiles", "running", null);
+        log.info("[AI-DIAG] interview={} tool=listFiles invoked", interviewId);
         try {
             List<ContainerFile> files = fileProvider.listFiles(interviewId);
             String result;
@@ -71,11 +72,12 @@ public class InterviewWorkspaceTools {
                         .map(f -> (f.isDirectory() ? "[DIR]  " : "[FILE] ") + f.filePath())
                         .collect(Collectors.joining("\n"));
             }
+            log.info("[AI-DIAG] interview={} tool=listFiles completed, files={}", interviewId, files.size());
             emitToolEvent(toolContext, callId, "listFiles", "completed",
                     files.stream().filter(f -> !f.isDirectory()).count() + " 個檔案");
             return result;
         } catch (Exception e) {
-            log.warn("listFiles failed for interview {}: {}", interviewId, e.getMessage());
+            log.warn("listFiles failed for interview {}", interviewId, e);
             emitToolEvent(toolContext, callId, "listFiles", "error", e.getMessage());
             return "Error listing files: " + e.getMessage();
         }
@@ -94,13 +96,16 @@ public class InterviewWorkspaceTools {
         // 顯示正在讀取的檔案路徑，讓使用者知道 AI 在看哪個檔案
         String shortPath = path.contains("/") ? path.substring(path.lastIndexOf('/') + 1) : path;
         emitToolEvent(toolContext, callId, "readFile", "running", shortPath);
+        log.info("[AI-DIAG] interview={} tool=readFile invoked, path={}", interviewId, path);
         try {
             String content = fileProvider.readFile(interviewId, path);
             String result = (content != null && !content.isBlank()) ? content : "(empty file)";
+            log.info("[AI-DIAG] interview={} tool=readFile completed, path={} length={}",
+                    interviewId, path, result.length());
             emitToolEvent(toolContext, callId, "readFile", "completed", shortPath);
             return result;
         } catch (Exception e) {
-            log.warn("readFile '{}' failed for interview {}: {}", path, interviewId, e.getMessage());
+            log.warn("readFile '{}' failed for interview {}", path, interviewId, e);
             emitToolEvent(toolContext, callId, "readFile", "error", shortPath);
             return "Error reading file '" + path + "': " + e.getMessage();
         }
@@ -120,8 +125,15 @@ public class InterviewWorkspaceTools {
         // 顯示完整指令讓使用者知道 AI 在執行什麼（超過 50 字元時截斷）
         String displayCmd = command.length() > 50 ? command.substring(0, 47) + "..." : command;
         emitToolEvent(toolContext, callId, "runCommand", "running", displayCmd);
+        long t0 = System.currentTimeMillis();
+        log.info("[AI-DIAG] interview={} tool=runCommand invoked, cmd={}", interviewId, displayCmd);
         try {
             CodeExecutionResult result = fileProvider.execInWorkspace(interviewId, command, RUN_COMMAND_TIMEOUT_SECONDS);
+            long elapsed = System.currentTimeMillis() - t0;
+            log.info("[AI-DIAG] interview={} tool=runCommand completed in {}ms, exitCode={} stdout={}chars stderr={}chars",
+                    interviewId, elapsed, result.exitCode(),
+                    result.stdout() != null ? result.stdout().length() : 0,
+                    result.stderr() != null ? result.stderr().length() : 0);
             StringBuilder sb = new StringBuilder();
             if (result.stdout() != null && !result.stdout().isBlank()) {
                 sb.append("STDOUT:\n").append(result.stdout().stripTrailing());
@@ -135,7 +147,7 @@ public class InterviewWorkspaceTools {
                     displayCmd + " (exit " + result.exitCode() + ")");
             return sb.toString();
         } catch (Exception e) {
-            log.warn("runCommand '{}' failed for interview {}: {}", command, interviewId, e.getMessage());
+            log.warn("runCommand '{}' failed for interview {}", command, interviewId, e);
             emitToolEvent(toolContext, callId, "runCommand", "error", displayCmd);
             return "Error running command: " + e.getMessage();
         }

@@ -20,6 +20,8 @@ import { getWsUrl } from "@interview/shared/lib/api-client";
 interface XtermTerminalInnerProps {
   interviewId: string;
   isActive: boolean;
+  /** 元件掛載並建立 WebSocket 後自動送出的指令（例如測試指令），用於 Run 按鈕串流場景 */
+  initialCommand?: string;
 }
 
 // VS Code 深色主題色調，與工作區整體風格一致
@@ -50,6 +52,7 @@ const VS_CODE_THEME = {
 export default function XtermTerminalInner({
   interviewId,
   isActive,
+  initialCommand,
 }: XtermTerminalInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -90,6 +93,14 @@ export default function XtermTerminalInner({
     ws.onopen = () => {
       // 連線建立後立即送出終端大小，讓後端 resize exec
       ws.send(`r${terminal.cols},${terminal.rows}`);
+      // 若有初始指令（如測試指令），延遲 500ms 等 shell prompt ready 後送出
+      if (initialCommand) {
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send("i" + initialCommand + "\r");
+          }
+        }, 500);
+      }
     };
 
     ws.onmessage = (e) => {
