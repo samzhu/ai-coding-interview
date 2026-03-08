@@ -53,6 +53,7 @@ dependencies {
 
     // Spring AI (non-starter: manual config, no auto-config compatibility issues with Spring Boot 4)
     implementation("org.springframework.ai:spring-ai-google-genai")
+    implementation("org.springframework.ai:spring-ai-anthropic")
     implementation("org.springframework.ai:spring-ai-client-chat")
 
     // YAML support for question resource files

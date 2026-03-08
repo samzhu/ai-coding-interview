@@ -1,50 +1,83 @@
 "use client";
+import { useEffect, useMemo, useState } from "react";
 
-import { useEffect, useState } from "react";
+// 設計說明：瀏覽器無法掃描靜態資料夾，用常數陣列註冊可用動畫。
+// 新增動畫時：放精靈圖到 public/sprites/<name>/sprite_sheet.png + sprite_sheet.json，
+// 然後把 <name> 加到這裡。
+const SPRITE_ANIMATIONS = ["cow"];
+const FPS = 8;
+const VIEW_HEIGHT = 60;
 
-// Sprite sheet 乳牛走路動畫參數：原圖 1536×1024, 7 幀水平排列
-// CELL_WIDTH > VIEW_WIDTH 是關鍵：讓容器寬度小於 sprite cell，
-// 配合 overflow-hidden 裁掉兩側邊緣，確保相鄰幀不會漏出可視範圍。
-// CENTER_OFFSET 將 cell 置中於容器，避免只看到牛的左半邊。
-const FRAME_COUNT = 7;
-const CELL_WIDTH = 110;                          // 每個 sprite cell 的縮放寬度（刻意大於容器）
-const VIEW_WIDTH = 80;                           // 容器可視寬度（裁掉兩側各 15px）
-const VIEW_HEIGHT = 60;                          // 容器可視高度
-const SPRITE_WIDTH = CELL_WIDTH * FRAME_COUNT;   // 770px（background-size 寬）
-const CENTER_OFFSET = (CELL_WIDTH - VIEW_WIDTH) / 2; // 15px — 水平居中偏移
-const FPS = 8;                                   // 走路幀率
-
-interface ThinkingAnimationProps {
-  thinkingSeconds: number;
+interface SpriteFrame {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+interface SpriteSheet {
+  sprites: SpriteFrame[];
+  spriteSheetWidth: number;
+  spriteSheetHeight: number;
 }
 
-// 像素風乳牛 sprite sheet 動畫：右→左穿越畫面。
+// 像素風精靈圖動畫：每次 mount 隨機挑一個動畫，右→左穿越畫面。
 // 兩層動畫合成：
-//   1. JS setInterval — 逐幀切換 background-position-x（腳步動畫）
+//   1. JS setInterval — 逐幀切換 background-position（腳步動畫）
 //   2. CSS animate-walk-across — left 100% → -80px（走過畫面）
-// CELL_WIDTH(110) > VIEW_WIDTH(80) 確保只顯示單幀，overflow-hidden 裁掉鄰幀。
-export function ThinkingAnimation({ thinkingSeconds }: ThinkingAnimationProps) {
+// 縮放邏輯：以 VIEW_HEIGHT / sprite.height 為統一縮放比，overflow-hidden 裁掉相鄰幀。
+export function ThinkingAnimation({ thinkingSeconds }: { thinkingSeconds: number }) {
+  const animationName = useMemo(
+    () => SPRITE_ANIMATIONS[Math.floor(Math.random() * SPRITE_ANIMATIONS.length)],
+    []
+  );
+  const [spriteSheet, setSpriteSheet] = useState<SpriteSheet | null>(null);
   const [frame, setFrame] = useState(0);
 
-  // 逐幀動畫：每 125ms (8fps) 切換下一幀
   useEffect(() => {
+    fetch(`/sprites/${animationName}/sprite_sheet.json`)
+      .then((r) => r.json())
+      .then(setSpriteSheet)
+      .catch(() => {});
+  }, [animationName]);
+
+  useEffect(() => {
+    if (!spriteSheet) return;
     const interval = setInterval(
-      () => setFrame((f) => (f + 1) % FRAME_COUNT),
+      () => setFrame((f) => (f + 1) % spriteSheet.sprites.length),
       1000 / FPS
     );
     return () => clearInterval(interval);
-  }, []);
+  }, [spriteSheet]);
+
+  if (!spriteSheet) {
+    return (
+      <div className="relative overflow-hidden h-[72px] mx-3 my-1" role="status" aria-live="polite">
+        <span className="absolute bottom-1 left-0 text-[10px] text-[#585858]">
+          AI 思考中...{thinkingSeconds > 0 ? ` (${thinkingSeconds}s)` : ""}
+        </span>
+      </div>
+    );
+  }
+
+  // 設計說明：以 viewHeight / 原始幀高 為縮放比，保持等比例縮放。
+  // viewWidth 使用完整的縮放後寬度，不裁切，確保角色頭尾完整顯示。
+  // backgroundPosition 直接用 JSON 的 sprite.x 座標定位，不需手動計算偏移。
+  const firstSprite = spriteSheet.sprites[0];
+  const scale = VIEW_HEIGHT / firstSprite.height;
+  const viewWidth = Math.round(firstSprite.width * scale);
+  const scaledSheetWidth = spriteSheet.spriteSheetWidth * scale;
+  const currentSprite = spriteSheet.sprites[frame];
 
   return (
     <div className="relative overflow-hidden h-[72px] mx-3 my-1" role="status" aria-live="polite">
       <div
         className="absolute top-0 select-none animate-walk-across overflow-hidden"
         style={{
-          width: VIEW_WIDTH,
+          width: viewWidth,
           height: VIEW_HEIGHT,
-          backgroundImage: "url(/sprites/cow-walk.png)",
-          backgroundSize: `${SPRITE_WIDTH}px auto`,
-          backgroundPosition: `-${frame * CELL_WIDTH + CENTER_OFFSET}px center`,
+          backgroundImage: `url(/sprites/${animationName}/sprite_sheet.png)`,
+          backgroundSize: `${scaledSheetWidth}px auto`,
+          backgroundPosition: `-${currentSprite.x * scale}px center`,
           backgroundRepeat: "no-repeat",
         }}
       />

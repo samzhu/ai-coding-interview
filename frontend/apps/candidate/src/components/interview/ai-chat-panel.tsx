@@ -376,28 +376,21 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
             >
               <PromptInputTextarea placeholder="輸入問題...（Enter 送出，Shift+Enter 換行）" />
               <PromptInputFooter>
-                {models.length > 1 ? (
-                  <PromptInputSelect value={selectedModelId} onValueChange={setSelectedModelId}>
-                    {/* 深色 pill 風格，在 #1e1e1e 背景上清晰可見 */}
-                    <PromptInputSelectTrigger className="h-7 w-auto max-w-[200px] text-xs bg-[#2d2d2d] border border-[#404040] rounded-md text-[#cccccc] hover:bg-[#353535] hover:text-[#e0e0e0]">
-                      <PromptInputSelectValue />
-                    </PromptInputSelectTrigger>
-                    <PromptInputSelectContent>
-                      {models.map((m) => (
-                        <PromptInputSelectItem key={m.id} value={m.id}>
-                          {m.name}
-                        </PromptInputSelectItem>
-                      ))}
-                    </PromptInputSelectContent>
-                  </PromptInputSelect>
-                ) : models.length === 1 ? (
-                  // 單一模型時顯示純文字 pill，讓使用者知道當前模型
-                  <span className="text-xs text-[#999] bg-[#2d2d2d] border border-[#404040] rounded-md px-2.5 py-1 select-none">
-                    {models[0].name}
-                  </span>
-                ) : (
-                  <div />
-                )}
+                {/* 設計說明：永遠顯示模型下拉選單，不論後端回傳幾個模型。
+                    placeholder 在 models 為空時提示使用者，避免介面消失造成困惑。 */}
+                <PromptInputSelect value={selectedModelId} onValueChange={setSelectedModelId}>
+                  {/* 深色 pill 風格，在 #1e1e1e 背景上清晰可見 */}
+                  <PromptInputSelectTrigger className="h-7 w-auto max-w-[200px] text-xs bg-[#2d2d2d] border border-[#404040] rounded-md text-[#cccccc] hover:bg-[#353535] hover:text-[#e0e0e0]">
+                    <PromptInputSelectValue placeholder="無可用模型" />
+                  </PromptInputSelectTrigger>
+                  <PromptInputSelectContent>
+                    {models.map((m) => (
+                      <PromptInputSelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </PromptInputSelectItem>
+                    ))}
+                  </PromptInputSelectContent>
+                </PromptInputSelect>
                 <PromptInputSubmit status={status} onStop={stop} />
               </PromptInputFooter>
             </PromptInput>
