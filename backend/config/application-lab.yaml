@@ -1,0 +1,15 @@
+# =============================================================================
+# Lab 環境行為配置
+# =============================================================================
+# Profile: lab
+# 用途: 研發/內部驗證環境，搭配 gcp 基礎設施 profile（spring.profiles.active=gcp,lab）
+# =============================================================================
+
+spring:
+  config:
+    import: "optional:file:./config/application-secrets.properties"
+
+logging:
+  level:
+    com.interview: DEBUG
+    org.springframework.modulith: DEBUG

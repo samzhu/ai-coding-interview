@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@interview/shared/components/ui/sonner";
+import { OidcProviderWrapper } from "@/components/auth/oidc-provider-wrapper";
+import { AuthContextProvider } from "@/contexts/auth-context";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,7 +30,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <OidcProviderWrapper>
+          <AuthContextProvider>
+            {children}
+          </AuthContextProvider>
+        </OidcProviderWrapper>
         <Toaster />
       </body>
     </html>

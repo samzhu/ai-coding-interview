@@ -1,2 +1,0 @@
-aci:
-  system-prompt-resource: classpath:prompts/system-prompt-production.md

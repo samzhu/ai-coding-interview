@@ -1,11 +1,16 @@
 ---
 name: tdd
 description: >-
-  TDD 測試驅動開發 — 先寫測試、看它失敗、寫最少程式碼通過、重構。
-  紅綠重構循環（Red-Green-Refactor）。鐵律：沒有失敗的測試就不寫產品程式碼。
-  Use when: writing new features, fixing bugs, refactoring, or any behavior change.
-  The iron law: no production code without a failing test first.
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash
+  Test-Driven Development with strict Red-Green-Refactor cycle. Write the test
+  first, watch it fail, write minimal code to pass, then refactor. Use when
+  writing new features, fixing bugs, refactoring, or any behavior change.
+  Trigger on: "TDD", "test first", "test-driven", "unit test", "Red-Green-Refactor",
+  "寫功能", "加功能", "修 bug", "重構", "寫測試", "單元測試", "紅綠重構".
+  Also use when the user is about to write new production code or modify
+  existing behavior, even without explicitly mentioning TDD.
+metadata:
+  author: samzhu
+  version: 1.1.0
 ---
 
 # Test-Driven Development (TDD)

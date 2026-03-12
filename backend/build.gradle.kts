@@ -54,6 +54,7 @@ dependencies {
     // Spring AI (non-starter: manual config, no auto-config compatibility issues with Spring Boot 4)
     implementation("org.springframework.ai:spring-ai-google-genai")
     implementation("org.springframework.ai:spring-ai-anthropic")
+    implementation("org.springframework.ai:spring-ai-openai")
     implementation("org.springframework.ai:spring-ai-client-chat")
 
     // YAML support for question resource files
@@ -63,12 +64,17 @@ dependencies {
     implementation("com.github.docker-java:docker-java-core:3.5.3")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.5.3")
 
+    // Spring Security — OAuth2 resource server (JWT 驗證)
+    // SPA 直接持有 access token，後端純 Resource Server，不需要 oauth2-client
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+
     // Development only
     developmentOnly("org.springframework.boot:spring-boot-devtools")
     developmentOnly("org.springframework.boot:spring-boot-docker-compose")
 
     // Test — Spring Boot
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jdbc-test")
     testImplementation("org.springframework.boot:spring-boot-starter-liquibase-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")

@@ -2,6 +2,10 @@ spring:
   liquibase:
     enabled: true
 
+aci:
+  security:
+    enabled: false
+
 logging:
   level:
     org.springframework.modulith: DEBUG

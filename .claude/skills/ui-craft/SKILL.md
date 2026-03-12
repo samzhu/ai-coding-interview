@@ -1,12 +1,18 @@
 ---
 name: ui-craft
 description: >-
-  UI 介面設計與建構 — 有意圖的設計工藝。適用於 dashboard、頁面設計、元件開發、
-  資料介面、landing page、設計風格定義。
-  Design and build UI with intentional craft. Use when creating pages,
-  components, dashboards, or data interfaces. Covers intent-first process,
-  domain exploration, aesthetic direction, token architecture, and craft checks.
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash
+  Design and build UI with intentional craft, not defaults. Covers intent-first
+  process, domain exploration, aesthetic direction, token architecture, and
+  craft quality checks. Use when creating pages, components, dashboards, admin
+  panels, data interfaces, landing pages, forms, or any visual interface.
+  Trigger on: "UI", "frontend", "page", "component", "dashboard", "layout",
+  "CSS", "design", "admin panel", "landing page", "form", "data table",
+  "介面", "畫面", "前端", "頁面", "元件", "樣式", "設計", "表單".
+  Also use when the user says "build me a page" or describes any visual
+  interface requirement.
+metadata:
+  author: samzhu
+  version: 1.1.0
 ---
 
 ## Scope

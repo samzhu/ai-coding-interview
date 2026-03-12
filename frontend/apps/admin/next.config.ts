@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   ...(!isExport && {
     async rewrites() {
       return [
+        // API proxy：開發時將 /api/v1/* 代理至後端 Spring Boot
         {
           source: "/api/v1/:path*",
           destination: "http://localhost:8080/api/v1/:path*",

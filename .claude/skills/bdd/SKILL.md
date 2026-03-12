@@ -1,13 +1,17 @@
 ---
 name: bdd
 description: >-
-  BDD 行為驅動開發 — Discovery、Formulation、Automation。
-  適用於需求探索、Example Mapping（四色卡片法）、三友人會議（Three Amigos）、
-  Gherkin scenario 撰寫、使用者故事拆解、驗收條件定義。
-  Use when: exploring requirements with examples, writing Gherkin scenarios,
-  doing Example Mapping, defining acceptance criteria, or bridging business
-  and technical understanding.
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash
+  Behavior-Driven Development workflow covering Discovery, Formulation, and
+  Automation phases. Use when the user explores requirements with examples,
+  writes Gherkin scenarios, does Example Mapping, defines acceptance criteria,
+  discusses user stories, or bridges business and technical understanding.
+  Trigger on: "BDD", "Gherkin", "scenario", "feature file", ".feature",
+  "acceptance criteria", "user story", "Example Mapping", "Three Amigos",
+  "需求", "驗收", "使用者故事", "功能規格", "行為驅動". Also use when discussing
+  business rules or translating requirements into testable specifications.
+metadata:
+  author: samzhu
+  version: 1.1.0
 ---
 
 # BDD — 行為驅動開發工作流程

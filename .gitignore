@@ -16,6 +16,7 @@ bin/
 
 # Spring Boot
 HELP.md
+application-secrets.properties
 
 # Frontend build output copied to backend
 backend/src/main/resources/static/

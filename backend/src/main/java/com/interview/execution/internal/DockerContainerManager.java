@@ -15,7 +15,6 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -38,10 +37,9 @@ class DockerContainerManager implements ContainerManager {
     private final DockerClient dockerClient;
     private final String dockerHost;
 
-    DockerContainerManager(DockerClient dockerClient,
-                           @Value("${execution.docker.host:unix:///var/run/docker.sock}") String dockerHost) {
+    DockerContainerManager(DockerClient dockerClient, ExecutionDockerProperties properties) {
         this.dockerClient = dockerClient;
-        this.dockerHost = dockerHost;
+        this.dockerHost = properties.host();
     }
 
     /**

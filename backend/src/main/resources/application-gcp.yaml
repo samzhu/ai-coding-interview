@@ -1,0 +1,2 @@
+# GCP 基礎設施 profile（spring.profiles.active 包含 "gcp" 時啟用）。
+# 佔位：未來放 Cloud SQL Auth Proxy 連線、Cloud Run 特定配置等 GCP 基礎設施設定。

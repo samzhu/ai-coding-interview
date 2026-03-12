@@ -59,3 +59,7 @@ spring-shell.log
 # Cucumber / Test Reports
 **/target/cucumber-reports/
 **/surefire-reports/
+
+### Secrets ###
+config/application-secrets.properties
+!config/application-secrets.properties.example

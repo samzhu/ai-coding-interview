@@ -16,7 +16,6 @@ public record AciModelsProperties(String systemPromptResource, List<ModelEntry> 
             String id,
             String name,
             String provider,
-            String apiKey,
-            Double temperature
+            String apiKey
     ) {}
 }

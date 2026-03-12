@@ -1,0 +1,8 @@
+# 生產環境行為 profile（spring.profiles.active 包含 "prod" 時啟用）。
+# 覆蓋 application.yaml 的開發預設值，啟用生產等級的日誌與 system prompt。
+aci:
+  system-prompt-resource: classpath:prompts/system-prompt-production.md
+
+logging:
+  level:
+    root: INFO

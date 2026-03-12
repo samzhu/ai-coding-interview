@@ -1,10 +1,20 @@
 ---
 name: research
 description: >-
-  研究任何開發技術主題並整理成教學文件。當用戶說「研究」「研究一下」「調查」「比較」「分析」「學習」「了解」某個主題時自動使用。適用於：程式語言（Java,
-  Rust, Go, Swift, Python 等）、框架（Spring, SwiftUI, React 等）、架構設計（微服務,
-  CQRS, 事件溯源, DDD 等）、DevOps、雲端服務等所有技術領域。
-allowed-tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
+  Research any development technology topic and produce structured tutorial
+  documents. Use when the user wants to research, investigate, compare, learn
+  about, or understand any technical topic including programming languages,
+  frameworks, architecture patterns, DevOps, and cloud services. Trigger on:
+  "research", "investigate", "compare", "analyze", "what is X", "how does X
+  work", "X vs Y", "研究", "調查", "比較", "分析", "了解", "查一下", "幫我找".
+  Also use when the user asks about a technology even without explicitly saying
+  "research".
+user-invocable: true
+metadata:
+  author: samzhu
+  version: 1.2.0
+  category: knowledge
+  tags: [research, documentation, learning, tutorial]
 ---
 
 # 技術研究與教學文件工作流程
@@ -96,7 +106,18 @@ allowed-tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 
 > 詳細分級表和來源範例見 `references/source-priority.md`
 
-### 2.4 收集的資訊
+### 2.4 深入閱讀關鍵頁面
+
+對於搜尋結果中的重要頁面（尤其是官方文件），使用 WebFetch 讀取完整內容：
+
+```
+CRITICAL: 不要只依賴搜尋摘要。對以下類型的頁面，必須用 WebFetch 取得完整內容：
+- 官方 Getting Started / Quickstart 頁面
+- 官方 Best Practices 頁面
+- 版本 Migration Guide（如果涉及版本比較）
+```
+
+### 2.5 收集的資訊
 
 - 核心概念與原理
 - 優缺點分析
@@ -224,6 +245,44 @@ docs/
 - 建議學習順序
 - 提供入門資源
 - 詢問具體想做的專案，反推需要學什麼
+
+---
+
+## Troubleshooting
+
+### WebSearch 無結果或結果過少
+
+1. 嘗試縮短關鍵字，去除年份限制
+2. 用不同英文同義詞重試（例如 "event sourcing" vs "event-driven architecture"）
+3. 改用更通用的上層概念搜尋，再從結果中縮小範圍
+
+### 搜尋結果過時
+
+1. 加上當前年份篩選：`[主題] {當前年份}`
+2. 優先查看官方 changelog 或 release notes
+3. 用 WebFetch 讀取官方文件頁面，確認最新版本號
+
+### 用戶需求太廣泛
+
+**不要直接開始全面研究。** 先用 Phase 1 的方向列表引導用戶縮小範圍，再進入 Phase 2。
+
+### docs/INDEX.md 不存在
+
+1. 詢問用戶是否要建立 `docs/` 目錄結構
+2. 如果確認，建立 `docs/INDEX.md` 並加入分類說明章節
+
+---
+
+## Quality Checklist
+
+在交付文件前，確認以下項目：
+
+- [ ] 所有來源都附有可存取的 URL
+- [ ] 至少包含一個官方來源（🥇）
+- [ ] 最佳實踐章節包含 Do's 和 Don'ts
+- [ ] 程式碼範例可直接執行（如適用）
+- [ ] `docs/INDEX.md` 已更新
+- [ ] 文件命名符合小寫連字號慣例
 
 ---
 

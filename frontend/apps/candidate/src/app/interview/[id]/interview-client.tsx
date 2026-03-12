@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { InterviewProvider } from "@/contexts/interview-context";
 import { InterviewWorkspace } from "@/components/interview/interview-workspace";
 import { useRouteParam } from "@interview/shared/hooks/use-route-param";
-import { apiGet, apiPost } from "@interview/shared/lib/api-client";
+import { apiGet, apiPost, setBearerToken } from "@interview/shared/lib/api-client";
 import type {
   InterviewResponse,
   InterviewStatus,
@@ -49,6 +49,16 @@ export function InterviewClient() {
   const [loadingMessage, setLoadingMessage] = useState("載入中...");
   const [notFound, setNotFound] = useState(false);
   const [containerFailed, setContainerFailed] = useState(false);
+
+  // 設計說明：頁面重整或直接進入時，從 sessionStorage 恢復 invitation token。
+  // join 流程已將 token 存入 sessionStorage（見 join-button.tsx）。
+  // 僅在安全模式下執行（token 不存在時跳過，不影響開發模式）。
+  useEffect(() => {
+    const savedToken = sessionStorage.getItem("invitation_token");
+    if (savedToken) {
+      setBearerToken(savedToken);
+    }
+  }, []);
 
   useEffect(() => {
     if (!id) return;

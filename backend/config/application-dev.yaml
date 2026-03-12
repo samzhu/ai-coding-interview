@@ -1,0 +1,15 @@
+# 開發環境行為 profile（spring.profiles.active 包含 "dev" 時啟用）。
+# 啟用 DEBUG 日誌，並從外部 secrets 檔案載入 API key 等機敏值。
+spring:
+  config:
+    import: "optional:file:./config/application-secrets.properties"
+
+logging:
+  level:
+    com.interview: DEBUG
+    org.springframework.modulith: DEBUG
+    org.springframework.data.jdbc: DEBUG
+
+# OAuth2（aci.security.enabled=true 時需要）
+aci-security-enabled: true
+aci-oauth2-issuer-uri: "https://auth-dev.omnihubs.cloud"

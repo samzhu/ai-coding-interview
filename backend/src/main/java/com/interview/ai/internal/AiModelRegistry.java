@@ -7,6 +7,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
@@ -37,11 +40,11 @@ public class AiModelRegistry {
                 log.warn("Skipping model '{}': no API key configured", entry.id());
                 continue;
             }
-            double temperature = entry.temperature() != null ? entry.temperature() : 0.7;
             try {
                 // 設計說明：以 switch 分派各 provider 的手動配置邏輯，避免使用 Spring Boot auto-config
                 // starter，消除與 Spring Boot 4 的相容性衝突。每個 provider 各自建立 ChatModel 後統一
                 // 包裝為 ChatClient，其餘服務層不需感知底層 provider 差異。
+                // temperature 不明確設定，讓各 provider 採用自身預設值。
                 switch (entry.provider()) {
                     case "google-genai" -> {
                         Client genAiClient = Client.builder()
@@ -51,7 +54,6 @@ public class AiModelRegistry {
                                 .genAiClient(genAiClient)
                                 .defaultOptions(GoogleGenAiChatOptions.builder()
                                         .model(entry.id())
-                                        .temperature(temperature)
                                         .build())
                                 .build();
                         clients.put(entry.id(), ChatClient.create(chatModel));
@@ -66,7 +68,20 @@ public class AiModelRegistry {
                                 .anthropicApi(anthropicApi)
                                 .defaultOptions(AnthropicChatOptions.builder()
                                         .model(entry.id())
-                                        .temperature(temperature)
+                                        .build())
+                                .build();
+                        clients.put(entry.id(), ChatClient.create(chatModel));
+                    }
+                    case "openai" -> {
+                        // 設計說明：使用 OpenAiApi + OpenAiChatModel 手動配置，
+                        // 與其他 provider 相同模式，不依賴 spring-ai-starter-model-openai。
+                        OpenAiApi openAiApi = OpenAiApi.builder()
+                                .apiKey(entry.apiKey())
+                                .build();
+                        OpenAiChatModel chatModel = OpenAiChatModel.builder()
+                                .openAiApi(openAiApi)
+                                .defaultOptions(OpenAiChatOptions.builder()
+                                        .model(entry.id())
                                         .build())
                                 .build();
                         clients.put(entry.id(), ChatClient.create(chatModel));

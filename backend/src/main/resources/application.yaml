@@ -1,14 +1,16 @@
 spring:
   application:
     name: ai-coding-interview
+  profiles:
+    # 預設同時啟用本地基礎設施（local）與開發環境行為（dev）。
+    # 生產部署時覆寫為 "gcp,prod"。
+    default: local,dev
   threads:
     virtual:
       enabled: true
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     enabled: true
-  jpa:
-    show-sql: false
   mvc:
     problemdetails:
       enabled: true
@@ -16,31 +18,39 @@ spring:
       # SSE 串流（AI 聊天）可能持續數分鐘（AI tool 執行 gradle test 等長時間指令），
       # -1 表示不設超時，讓串流自然結束或由前端關閉連線。
       request-timeout: -1
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # aci.security.enabled=true 時需設定（透過 secrets 或環境變數）。
+          issuer-uri: ${aci-oauth2-issuer-uri:}
+
+# 合併為單一 aci: 區塊，避免 YAML 重複 key 導致後者覆蓋前者的問題。
 aci:
   system-prompt-resource: classpath:prompts/system-prompt-dev.md
   models:
-    - id: gemini-2.5-flash
-      name: Gemini 2.5 Flash
+    - id: gemini-3.1-flash-lite-preview
+      name: Gemini 3.1 Flash-Lite Preview
       provider: google-genai
-      api-key: ${GOOGLE_GENAI_API_KEY:}
-      temperature: 0.7
-    - id: gemini-2.0-flash
-      name: Gemini 2.0 Flash
-      provider: google-genai
-      api-key: ${GOOGLE_GENAI_API_KEY:}
-      temperature: 0.7
+      api-key: ${aci-google-genai-api-key:}
     - id: claude-sonnet-4-6
       name: Claude Sonnet 4.6
       provider: anthropic
-      api-key: ${ANTHROPIC_API_KEY:}
-      temperature: 0.7
+      api-key: ${aci-anthropic-api-key:}
+    - id: gpt-5-nano
+      name: GPT-5 Nano
+      provider: openai
+      api-key: ${aci-openai-api-key:}
+  security:
+    # 設為 true 啟用完整 OAuth2 安全機制（需設定 aci-oauth2-issuer-uri）。
+    # 預設 false：所有 API 公開，方便本地開發。
+    enabled: ${aci-security-enabled:true}
+    # CORS 允許的前端 Origin（逗號分隔），prod 應設為實際域名。
+    cors-allowed-origins: ${aci-cors-allowed-origins:http://localhost:3000,http://localhost:3001}
 
 server:
   port: 8080
   shutdown: graceful
-
-admin:
-  token: ${ADMIN_TOKEN:}
 
 management:
   endpoints:

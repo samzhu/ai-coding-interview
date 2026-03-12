@@ -11,13 +11,17 @@ const navLinks = [
   { href: "/guide", label: "Guide" },
 ];
 
-export function TopNav() {
+interface TopNavProps {
+  rightSlot?: React.ReactNode;
+}
+
+export function TopNav({ rightSlot }: TopNavProps) {
   const pathname = usePathname();
 
   return (
     <nav className="h-14 bg-card border-b border-border flex items-center px-6 gap-8 shrink-0">
       <span className="text-foreground font-semibold text-sm">AI 面試平台</span>
-      <div className="flex items-center h-full gap-1">
+      <div className="flex items-center h-full gap-1 flex-1">
         {navLinks.map((link) => {
           const isActive =
             link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
@@ -37,6 +41,7 @@ export function TopNav() {
           );
         })}
       </div>
+      {rightSlot && <div className="ml-auto">{rightSlot}</div>}
     </nav>
   );
 }
