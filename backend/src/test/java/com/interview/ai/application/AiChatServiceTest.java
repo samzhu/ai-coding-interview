@@ -14,10 +14,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
@@ -55,31 +57,41 @@ class AiChatServiceTest {
     private InterviewWorkspaceTools workspaceTools;
 
     @Mock
-    private MessageChatMemoryAdvisor memoryAdvisor;
+    private ChatMemory chatMemory;
 
     @Mock
-    private ToolCallAdvisor toolCallAdvisor;
+    private ToolCallingManager toolCallingManager;
 
     private AiChatService buildService() {
         return new AiChatService(repository, modelRegistry,
                 interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher,
-                workspaceTools, memoryAdvisor, toolCallAdvisor);
+                workspaceTools, chatMemory, toolCallingManager);
+    }
+
+    /** 建立一個 no-tool-calls ChatResponse mock，回傳指定文字。
+     *  設計說明：先 stub getOutput() 回傳真實 AssistantMessage，不再 stub .getText()，
+     *  因為 AssistantMessage(text).getText() 本身就會回傳 text。
+     *  metadata 透過 RETURNS_DEEP_STUBS 處理，updateLastAssistantTokenUsage 有 try-catch 兜底。
+     */
+    private ChatResponse mockChatResponse(String text) {
+        ChatResponse response = Mockito.mock(ChatResponse.class, Mockito.RETURNS_DEEP_STUBS);
+        when(response.hasToolCalls()).thenReturn(false);
+        when(response.getResult().getOutput()).thenReturn(new AssistantMessage(text));
+        return response;
     }
 
     @Test
-    @DisplayName("chat 有 ChatClient 時應回傳最後一筆訊息")
+    @DisplayName("chat 有 ChatModel 時應回傳最後一筆訊息")
     void shouldSaveUserMessageAndReturnAiResponse() {
         UUID interviewId = UUID.randomUUID();
 
-        // 使用 RETURNS_DEEP_STUBS 讓整條 advisor chain 自動回傳 mock
-        // 第二個 advisors() 帶 Consumer<AdvisorSpec>（設定 conversationId 參數），需明確型別避免歧義
-        ChatClient chatClient = Mockito.mock(ChatClient.class, Mockito.RETURNS_DEEP_STUBS);
-        when(chatClient.prompt().user(any(String.class)).advisors(any(), any())
-                .advisors(any(java.util.function.Consumer.class)).tools(any()).toolContext(any()).call().content())
-                .thenReturn("Think about using a hash map.");
+        ChatModel chatModel = Mockito.mock(ChatModel.class);
+        ChatResponse chatResponse = mockChatResponse("Think about using a hash map.");
+        when(chatModel.call(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(chatResponse);
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
-        when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
+        when(modelRegistry.getChatModel("gemini-2.5-flash")).thenReturn(Optional.of(chatModel));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
+        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
 
         ConversationMessage assistantMsg = ConversationMessage.create(
                 interviewId, MessageType.ASSISTANT, "Think about using a hash map.");
@@ -99,8 +111,8 @@ class AiChatServiceTest {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
-        when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.empty());
-        when(modelRegistry.getFirstClient()).thenReturn(Optional.empty());
+        when(modelRegistry.getChatModel("gemini-2.5-flash")).thenReturn(Optional.empty());
+        when(modelRegistry.getFirstChatModel()).thenReturn(Optional.empty());
 
         ConversationMessage assistantMsg = ConversationMessage.create(interviewId, MessageType.ASSISTANT,
                 "AI assistant is not configured for this environment. Set GOOGLE_GENAI_API_KEY to enable AI-powered hints.");
@@ -110,7 +122,7 @@ class AiChatServiceTest {
         ConversationMessage result = service.chat(interviewId, "Hello");
 
         assertThat(result.getRole()).isEqualTo("ASSISTANT");
-        // 無 advisor 時直接寫入 repository（user + stub assistant）
+        // 無可用模型時直接寫入 repository（user + stub assistant）
         verify(repository, times(2)).save(any(ConversationMessage.class));
     }
 
@@ -130,18 +142,17 @@ class AiChatServiceTest {
     }
 
     @Test
-    @DisplayName("streamChat 有 ChatClient 時應回傳串流")
+    @DisplayName("streamChat 有 ChatModel 時應回傳串流")
     void shouldStreamResponseWhenChatClientPresent() {
         UUID interviewId = UUID.randomUUID();
 
-        // 使用 RETURNS_DEEP_STUBS 讓整條 advisor chain 自動回傳 mock
-        ChatClient chatClient = Mockito.mock(ChatClient.class, Mockito.RETURNS_DEEP_STUBS);
-        when(chatClient.prompt().user(any(String.class)).advisors(any(), any())
-                .advisors(any(java.util.function.Consumer.class)).tools(any()).toolContext(any()).call().content())
-                .thenReturn("Hello World");
+        ChatModel chatModel = Mockito.mock(ChatModel.class);
+        ChatResponse chatResponse = mockChatResponse("Hello World");
+        when(chatModel.call(any(org.springframework.ai.chat.prompt.Prompt.class))).thenReturn(chatResponse);
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
-        when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.of(chatClient));
+        when(modelRegistry.getChatModel("gemini-2.5-flash")).thenReturn(Optional.of(chatModel));
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
+        when(chatMemory.get(interviewId.toString())).thenReturn(List.of());
 
         AiChatService service = buildService();
         var result = service.streamChat(interviewId, "Any hints?", null, null);
@@ -209,8 +220,8 @@ class AiChatServiceTest {
         UUID interviewId = UUID.randomUUID();
         when(aiPolicyProvider.isAiEnabled(interviewId)).thenReturn(true);
         when(interviewModelProvider.getAiModel(interviewId)).thenReturn("gemini-2.5-flash");
-        when(modelRegistry.getChatClient("gemini-2.5-flash")).thenReturn(Optional.empty());
-        when(modelRegistry.getFirstClient()).thenReturn(Optional.empty());
+        when(modelRegistry.getChatModel("gemini-2.5-flash")).thenReturn(Optional.empty());
+        when(modelRegistry.getFirstChatModel()).thenReturn(Optional.empty());
 
         AiChatService service = buildService();
         var result = service.streamChat(interviewId, "Hello", null, null);

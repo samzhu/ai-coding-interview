@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 了解功能需求或是目的後, 或是為什麼考慮這樣處理, 要記得寫設計說明註解
 
+需要的開發資訊 SDK 都上網再確認過一次
+
+參考資料要附上來源
+
 
 ## Project Structure
 

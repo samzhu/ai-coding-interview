@@ -11,5 +11,5 @@ logging:
     org.springframework.data.jdbc: DEBUG
 
 # OAuth2（aci.security.enabled=true 時需要）
-aci-security-enabled: true
+aci-security-enabled: false
 aci-oauth2-issuer-uri: "https://auth-dev.omnihubs.cloud"

@@ -8,6 +8,7 @@ import { CheckCircle, XCircle, Loader2, FileSearch, FolderOpen, Terminal } from 
 import { ThinkingAnimation } from "./thinking-animation";
 import type { AiModelInfo, ChatMessage } from "@interview/shared/types";
 import { apiGet, getApiUrl } from "@interview/shared/lib/api-client";
+import { stripEditProposals } from "@interview/shared/lib/edit-proposal-utils";
 import { useInterview } from "@/contexts/interview-context";
 import {
   Conversation,
@@ -39,15 +40,12 @@ interface AiChatPanelProps {
   aiEnabled?: boolean;
 }
 
-// edit_proposal XML 區塊的正則（後端串流時包含原始 XML，前端需過濾避免顯示生硬標籤）
-const EDIT_PROPOSAL_REGEX = /<edit_proposal[\s\S]*?<\/edit_proposal>/g;
-
 function getTextContent(message: UIMessage): string {
   const raw = message.parts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.text)
     .join("");
-  return raw.replace(EDIT_PROPOSAL_REGEX, "").trim();
+  return stripEditProposals(raw);
 }
 
 // AI SDK v6 要求 data 事件 type 以 "data-" 開頭，
@@ -231,14 +229,77 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
       const res = await fetch(getApiUrl(`/interviews/${interviewId}/ai/history`));
       if (!res.ok) return;
       const data: { messages: ChatMessage[] } = await res.json();
-      const history: UIMessage[] = data.messages
-        .filter((m) => m.role !== "SYSTEM")
-        .map((m) => ({
-          id: m.id,
-          role: m.role.toLowerCase() as "user" | "assistant",
-          parts: [{ type: "text" as const, text: m.content }],
-          createdAt: new Date(m.createdAt),
-        }));
+
+      // 從後端 TOOL_CALL 訊息的中文摘要反推 toolName 和 summary，
+      // 以便重建 data-tool-invocation parts，讓 ToolInvocationBadge 正確渲染。
+      function parseToolCallContent(content: string): { toolName: string; summary?: string } {
+        if (content === "列出工作區檔案") return { toolName: "listFiles" };
+        const readMatch = content.match(/^讀取檔案\s+(.+)/);
+        if (readMatch) return { toolName: "readFile", summary: readMatch[1].split("\n")[0] };
+        // runCommand 指令可能含換行（如 heredoc），僅取第一行作為 summary 顯示
+        const runMatch = content.match(/^執行指令\s+(.+)/);
+        if (runMatch) return { toolName: "runCommand", summary: runMatch[1].split("\n")[0] };
+        return { toolName: "unknown", summary: content };
+      }
+
+      // 第一輪 filter：保留 USER、ASSISTANT、TOOL_CALL，排除 SYSTEM
+      const relevant = data.messages.filter(
+        (m) => m.role === "USER" || m.role === "ASSISTANT" || m.role === "TOOL_CALL"
+      );
+
+      // 第二輪合併：將連續 TOOL_CALL 收集，遇到 ASSISTANT 時前置插入其 parts
+      const history: UIMessage[] = [];
+      let pendingToolParts: Array<{ type: "data-tool-invocation"; data: ToolInvocationData }> = [];
+
+      for (const m of relevant) {
+        if (m.role === "TOOL_CALL") {
+          const parsed = parseToolCallContent(m.content);
+          pendingToolParts.push({
+            type: "data-tool-invocation" as const,
+            data: {
+              toolCallId: m.id,
+              toolName: parsed.toolName as ToolInvocationData["toolName"],
+              state: "completed" as const,
+              summary: parsed.summary,
+            },
+          });
+        } else if (m.role === "ASSISTANT") {
+          history.push({
+            id: m.id,
+            role: "assistant",
+            parts: [
+              ...pendingToolParts,
+              { type: "text" as const, text: m.content },
+            ],
+          });
+          pendingToolParts = [];
+        } else {
+          // USER 訊息：先沖出 pending tool parts（邊界情況：TOOL_CALL 後無 ASSISTANT）
+          if (pendingToolParts.length > 0) {
+            history.push({
+              id: `synthetic-${m.id}`,
+              role: "assistant",
+              parts: [...pendingToolParts],
+            });
+            pendingToolParts = [];
+          }
+          history.push({
+            id: m.id,
+            role: "user",
+            parts: [{ type: "text" as const, text: m.content }],
+          });
+        }
+      }
+
+      // 末尾殘留的 TOOL_CALL（無後續 ASSISTANT）
+      if (pendingToolParts.length > 0) {
+        history.push({
+          id: `synthetic-tail-${Date.now()}`,
+          role: "assistant",
+          parts: [...pendingToolParts],
+        });
+      }
+
       if (history.length > 0) {
         setMessages(history);
       }

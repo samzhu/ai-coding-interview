@@ -1,6 +1,7 @@
 package com.interview.monitoring.application;
 
 import com.interview.ai.AiChatMessageEvent;
+import com.interview.ai.AiToolExecutionEvent;
 import com.interview.interview.CodeSubmittedEvent;
 import com.interview.interview.InterviewCompletedEvent;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -69,6 +71,21 @@ public class InterviewMonitoringService {
                 "content", event.content()
         );
         broadcast(event.interviewId(), eventType, data);
+    }
+
+    @EventListener
+    public void onAiToolExecution(AiToolExecutionEvent event) {
+        // 設計說明：將工具執行狀態即時廣播給 Admin 監控頁面，
+        // Admin 可看到 AI 正在讀取哪些檔案、執行哪些指令（running → completed）。
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("type", "ai-tool-execution");
+        data.put("toolCallId", event.toolCallId());
+        data.put("toolName", event.toolName());
+        data.put("state", event.state());
+        if (event.summary() != null) {
+            data.put("summary", event.summary());
+        }
+        broadcast(event.interviewId(), "ai-tool-execution", data);
     }
 
     @EventListener

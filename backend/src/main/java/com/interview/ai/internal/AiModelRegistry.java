@@ -11,7 +11,7 @@ import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +27,9 @@ public class AiModelRegistry {
     private static final Logger log = LoggerFactory.getLogger(AiModelRegistry.class);
 
     private final Map<String, ChatClient> clients = new LinkedHashMap<>();
+    // 設計說明：User Controlled Tool Execution 需要直接呼叫 ChatModel.call(Prompt)，
+    // 而 ChatClient 介面不暴露底層 ChatModel，因此額外儲存 ChatModel map 供 AiChatService 使用。
+    private final Map<String, ChatModel> chatModels = new LinkedHashMap<>();
     private final List<AiModelInfo> availableModels = new ArrayList<>();
 
     AiModelRegistry(AciModelsProperties properties) {
@@ -47,15 +50,18 @@ public class AiModelRegistry {
                 // temperature 不明確設定，讓各 provider 採用自身預設值。
                 switch (entry.provider()) {
                     case "google-genai" -> {
+                        // 設計說明：使用 PatchedGoogleGenAiChatModel 修復 Spring AI #5466。
+                        // GoogleGenAiChatModel.Builder.build() 固定回傳父類別實例，無法透過 builder 取得子類別，
+                        // 因此改用 constructor 直接建立 PatchedGoogleGenAiChatModel。
                         Client genAiClient = Client.builder()
                                 .apiKey(entry.apiKey())
                                 .build();
-                        GoogleGenAiChatModel chatModel = GoogleGenAiChatModel.builder()
-                                .genAiClient(genAiClient)
-                                .defaultOptions(GoogleGenAiChatOptions.builder()
+                        PatchedGoogleGenAiChatModel chatModel = new PatchedGoogleGenAiChatModel(
+                                genAiClient,
+                                GoogleGenAiChatOptions.builder()
                                         .model(entry.id())
-                                        .build())
-                                .build();
+                                        .build());
+                        chatModels.put(entry.id(), chatModel);
                         clients.put(entry.id(), ChatClient.create(chatModel));
                     }
                     case "anthropic" -> {
@@ -68,8 +74,12 @@ public class AiModelRegistry {
                                 .anthropicApi(anthropicApi)
                                 .defaultOptions(AnthropicChatOptions.builder()
                                         .model(entry.id())
+                                        // 設計說明：Anthropic API 要求 max_tokens 必填，未設定會回 400 錯誤。
+                                        // 16384 對應 Claude 3/4 系列的合理上限，足以容納完整面試回應。
+                                        .maxTokens(16384)
                                         .build())
                                 .build();
+                        chatModels.put(entry.id(), chatModel);
                         clients.put(entry.id(), ChatClient.create(chatModel));
                     }
                     case "openai" -> {
@@ -84,6 +94,7 @@ public class AiModelRegistry {
                                         .model(entry.id())
                                         .build())
                                 .build();
+                        chatModels.put(entry.id(), chatModel);
                         clients.put(entry.id(), ChatClient.create(chatModel));
                     }
                     default -> {
@@ -107,6 +118,10 @@ public class AiModelRegistry {
         return Optional.ofNullable(clients.get(modelId));
     }
 
+    public Optional<ChatModel> getChatModel(String modelId) {
+        return Optional.ofNullable(chatModels.get(modelId));
+    }
+
     public List<AiModelInfo> getAvailableModels() {
         return List.copyOf(availableModels);
     }
@@ -117,5 +132,9 @@ public class AiModelRegistry {
 
     public Optional<ChatClient> getFirstClient() {
         return clients.values().stream().findFirst();
+    }
+
+    public Optional<ChatModel> getFirstChatModel() {
+        return chatModels.values().stream().findFirst();
     }
 }

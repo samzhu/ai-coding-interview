@@ -22,6 +22,14 @@ export interface AiMessageEvent {
   content: string;
 }
 
+export interface AiToolExecutionEvent {
+  type: "ai-tool-execution";
+  toolCallId: string;
+  toolName: string;
+  state: "running" | "completed" | "error";
+  summary?: string;
+}
+
 export interface InterviewCompletedEvent {
   type: "interview-completed";
   interviewId: string;
@@ -31,6 +39,7 @@ export type MonitorEvent =
   | CodeChangeEvent
   | CheckpointEvent
   | AiMessageEvent
+  | AiToolExecutionEvent
   | InterviewCompletedEvent;
 
 export interface MonitorStreamHandlers {
@@ -39,6 +48,7 @@ export interface MonitorStreamHandlers {
   onCheckpointFailed?: (event: CheckpointEvent) => void;
   onAiPromptSent?: (event: AiMessageEvent) => void;
   onAiResponseReceived?: (event: AiMessageEvent) => void;
+  onAiToolExecution?: (event: AiToolExecutionEvent) => void;
   onInterviewCompleted?: (event: InterviewCompletedEvent) => void;
 }
 
@@ -94,6 +104,15 @@ export function useMonitorStream(
       try {
         const data: AiMessageEvent = JSON.parse(e.data);
         handlersRef.current.onAiResponseReceived?.(data);
+      } catch {
+        // ignore malformed events
+      }
+    });
+
+    es.addEventListener("ai-tool-execution", (e: MessageEvent) => {
+      try {
+        const data: AiToolExecutionEvent = JSON.parse(e.data);
+        handlersRef.current.onAiToolExecution?.(data);
       } catch {
         // ignore malformed events
       }

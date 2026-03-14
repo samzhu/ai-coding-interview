@@ -25,7 +25,7 @@ spring:
           # aci.security.enabled=true 時需設定（透過 secrets 或環境變數）。
           issuer-uri: ${aci-oauth2-issuer-uri:}
 
-# 合併為單一 aci: 區塊，避免 YAML 重複 key 導致後者覆蓋前者的問題。
+
 aci:
   system-prompt-resource: classpath:prompts/system-prompt-dev.md
   models:

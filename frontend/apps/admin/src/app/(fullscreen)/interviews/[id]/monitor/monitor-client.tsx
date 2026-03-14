@@ -10,7 +10,7 @@ import {
   MonitorCheckpointProgress,
   CheckpointStatus,
 } from "@/components/admin/monitor/monitor-checkpoint-progress";
-import { useMonitorStream } from "@/hooks/use-monitor-stream";
+import { useMonitorStream, type AiToolExecutionEvent } from "@/hooks/use-monitor-stream";
 import { useRouteParam } from "@interview/shared/hooks/use-route-param";
 import { apiGet } from "@interview/shared/lib/api-client";
 import type { InterviewResponse, CheckpointResultResponse } from "@interview/shared/types";
@@ -58,9 +58,13 @@ export function MonitorClient() {
           const mapped: ChatMessage[] = historyData.messages
             .filter((m) => m.role !== "SYSTEM")
             .map((m) => ({
-              role: m.role as "USER" | "ASSISTANT",
+              role: m.role as "USER" | "ASSISTANT" | "TOOL_CALL",
               content: m.content,
               timestamp: new Date(m.createdAt),
+              model: m.model,
+              promptTokens: m.promptTokens,
+              completionTokens: m.completionTokens,
+              toolState: m.role === "TOOL_CALL" ? "completed" : undefined,
             }));
           setChatMessages(mapped);
         }
@@ -138,6 +142,28 @@ export function MonitorClient() {
     ]);
   }, []);
 
+  const handleAiToolExecution = useCallback((event: AiToolExecutionEvent) => {
+    setChatMessages((prev) => {
+      // 若同一 toolCallId 已有 running 條目，更新其 state；否則新增
+      const existingIdx = prev.findLastIndex(
+        (m) => m.role === "TOOL_CALL" && m.toolCallId === event.toolCallId
+      );
+      const newMsg: ChatMessage = {
+        role: "TOOL_CALL",
+        content: event.summary ?? event.toolName,
+        timestamp: new Date(),
+        toolState: event.state,
+        toolCallId: event.toolCallId,
+      };
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx] = newMsg;
+        return updated;
+      }
+      return [...prev, newMsg];
+    });
+  }, []);
+
   const handleInterviewCompleted = useCallback(() => {
     setIsCompleted(true);
     setInterview((prev) => (prev ? { ...prev, status: "COMPLETED" } : prev));
@@ -149,6 +175,7 @@ export function MonitorClient() {
     onCheckpointFailed: handleCheckpointFailed,
     onAiPromptSent: handleAiPromptSent,
     onAiResponseReceived: handleAiResponseReceived,
+    onAiToolExecution: handleAiToolExecution,
     onInterviewCompleted: handleInterviewCompleted,
   });
 

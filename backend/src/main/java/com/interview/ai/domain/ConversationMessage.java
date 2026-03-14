@@ -37,6 +37,12 @@ public class ConversationMessage {
     @Column("model")
     private String model;
 
+    @Column("prompt_tokens")
+    private Integer promptTokens;
+
+    @Column("completion_tokens")
+    private Integer completionTokens;
+
     protected ConversationMessage() {
     }
 
@@ -68,4 +74,19 @@ public class ConversationMessage {
     public String getContent() { return content; }
     public Instant getCreatedAt() { return createdAt; }
     public String getModel() { return model; }
+    public Integer getPromptTokens() { return promptTokens; }
+    public Integer getCompletionTokens() { return completionTokens; }
+
+    /**
+     * 設計說明：Post-update 策略 — advisor chain 已將 ASSISTANT 訊息存入 DB，
+     * 但 token usage 只能從最終 ChatResponse metadata 取得。
+     * 因此在 AI 呼叫完成後，回填 token 欄位和 model 名稱。
+     */
+    public void updateTokenUsage(Integer promptTokens, Integer completionTokens, String model) {
+        this.promptTokens = promptTokens;
+        this.completionTokens = completionTokens;
+        if (model != null) {
+            this.model = model;
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package com.interview.ai.internal;
 
+import com.interview.ai.AiToolExecutionEvent;
 import com.interview.execution.CodeExecutionResult;
 import com.interview.execution.ContainerFile;
 import com.interview.interview.InterviewFileProvider;
@@ -12,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -22,13 +24,18 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+// 設計說明：edit_proposal 改為 @Tool 函式（而非 system prompt 中描述的 XML 文字格式）。
+// 原因：Gemini 模型會將 system prompt 中的 XML 格式誤認為可呼叫的 function call，
+// 導致 IllegalStateException: No ToolCallback found for tool name: edit_proposal。
+// 正式 @Tool 宣告讓 Spring AI 自動處理 JSON schema 與反序列化，不再依賴 regex 解析。
+
 /**
  * Spring AI @Tool 工具集，供 AI 助手在對話過程中自動呼叫（tool calling）。
  *
  * 設計說明：
  * - 工具方法透過 ToolContext 取得 interviewId，避免 singleton bean 持有請求狀態
  * - 讀取工具（listFiles、readFile）和執行工具（runCommand）由 AI 自動呼叫
- * - 修改檔案刻意不提供 writeFile 工具；AI 透過 edit_proposal 格式提出修改建議，
+ * - 修改檔案刻意不提供 writeFile 工具；AI 透過 editProposal 工具提出修改建議，
  *   候選人審查後手動套用，確保「人在迴路中（Human-in-the-loop）」的控制權
  * - runCommand 限制 30 秒 timeout 防止長時間阻塞
  *
@@ -47,10 +54,13 @@ public class InterviewWorkspaceTools {
 
     private final InterviewFileProvider fileProvider;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public InterviewWorkspaceTools(InterviewFileProvider fileProvider, ObjectMapper objectMapper) {
+    public InterviewWorkspaceTools(InterviewFileProvider fileProvider, ObjectMapper objectMapper,
+                                   ApplicationEventPublisher eventPublisher) {
         this.fileProvider = fileProvider;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -154,39 +164,119 @@ public class InterviewWorkspaceTools {
     }
 
     /**
-     * 發送 tool 執行狀態 SSE 事件至前端。
+     * 設計說明：edit_proposal 改為 @Tool 函式。
      *
-     * 設計說明：ToolContext 中的 "toolSseEmitter" 是 AiChatController 注入的 Consumer<String>，
-     * 接受已格式化的 SSE 行（"data: {...}\n\n"）。呼叫此方法即直接寫入 HTTP 串流，
-     * 前端 AI SDK 解析後在 message.parts 加入 data-tool-invocation 部分。
+     * 為何改為工具而非文字 XML 格式：
+     * 1. Gemini 模型會將 system prompt 中的 XML 格式誤認為 function call → crash
+     * 2. Spring AI tool calling 自動處理 JSON schema → 不再依賴 regex 解析
+     * 3. 工具執行時即時推送 SSE 事件 → 候選人更早看到 diff
+     * 4. 工具可驗證 original 是否匹配 → AI 可自動修正重試
+     *
+     * Human-in-the-loop 不變：工具只提交建議，不直接修改檔案。
+     * 候選人在前端審查 diff 後手動套用。
+     */
+    @Tool(description = "Propose a code edit for the candidate to review. "
+            + "The candidate will see a diff view and can accept or reject. "
+            + "IMPORTANT: Always use readFile first to get the current file content, "
+            + "then use the exact content for the 'original' parameter.")
+    public String editProposal(
+            @ToolParam(description = "Relative file path from workspace root, e.g. 'src/main/java/Game.java'")
+            String file,
+            @ToolParam(description = "The exact original code snippet to replace. Must match current file content exactly.")
+            String original,
+            @ToolParam(description = "The proposed replacement code")
+            String proposed,
+            ToolContext toolContext) {
+        UUID interviewId = extractInterviewId(toolContext);
+        String callId = UUID.randomUUID().toString();
+        String shortFile = file != null && file.contains("/") ? file.substring(file.lastIndexOf('/') + 1) : file;
+
+        emitToolEvent(toolContext, callId, "editProposal", "running", shortFile);
+
+        emitEditProposalEvent(toolContext, file, original, proposed);
+        emitToolEvent(toolContext, callId, "editProposal", "completed", shortFile);
+
+        log.info("[AI-DIAG] interview={} tool=editProposal file={}", interviewId, file);
+        return "Edit proposal submitted for '" + file + "'. The candidate will review the diff and decide whether to apply it.";
+    }
+
+    /**
+     * 發送 data-edit-proposal SSE 事件給前端。
+     * 格式與舊版 AiChatController.buildEditProposalDataEvent() 完全一致，
+     * 確保前端 AI SDK v6 UIMessageStreamParser 能正確解析。
+     */
+    private void emitEditProposalEvent(ToolContext toolContext, String file, String original, String proposed) {
+        Object rawEmitter = toolContext.getContext().get("toolSseEmitter");
+        if (rawEmitter instanceof Consumer) {
+            @SuppressWarnings("unchecked")
+            Consumer<String> emitter = (Consumer<String>) rawEmitter;
+            try {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("type", "edit-proposal");
+                data.put("filePath", file != null ? file : "");
+                data.put("original", original != null ? original : "");
+                data.put("proposed", proposed != null ? proposed : "");
+
+                Map<String, Object> event = Map.of(
+                        "type", "data-edit-proposal",
+                        "id", UUID.randomUUID().toString(),
+                        "data", data
+                );
+                String json = objectMapper.writeValueAsString(event);
+                emitter.accept("data: " + json + "\n\n");
+            } catch (Exception e) {
+                log.debug("Failed to emit edit proposal SSE event: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 發送 tool 執行狀態 SSE 事件至前端，並同時發布 Spring 應用事件供 Admin 監控接收。
+     *
+     * 設計說明：
+     * 1. ToolContext 中的 "toolSseEmitter" 是 AiChatController 注入的 Consumer<String>，
+     *    接受已格式化的 SSE 行（"data: {...}\n\n"），寫入候選人端 HTTP 串流。
+     *    前端 AI SDK 解析後在 message.parts 加入 data-tool-invocation 部分。
+     * 2. 同時 publishEvent(AiToolExecutionEvent)，讓 InterviewMonitoringService
+     *    透過 @EventListener 廣播至 Admin 即時監控的 SSE 連線。
      *
      * state 值與前端 ToolInvocationBadge 對應：
-     * - "running": 旋轉動畫，顯示正在執行中
+     * - "running":   旋轉動畫，顯示正在執行中
      * - "completed": 綠色勾選，顯示完成摘要
-     * - "error": 紅色叉，顯示錯誤訊息
+     * - "error":     紅色叉，顯示錯誤訊息
      */
     private void emitToolEvent(ToolContext toolContext, String toolCallId,
                                String toolName, String state, String summary) {
+        // 1. 寫入候選人端 SSE 串流
         Object rawEmitter = toolContext.getContext().get("toolSseEmitter");
-        if (!(rawEmitter instanceof Consumer)) return;
-        @SuppressWarnings("unchecked")
-        Consumer<String> emitter = (Consumer<String>) rawEmitter;
-        try {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("toolCallId", toolCallId);
-            data.put("toolName", toolName);
-            data.put("state", state);
-            if (summary != null) data.put("summary", summary);
+        if (rawEmitter instanceof Consumer) {
+            @SuppressWarnings("unchecked")
+            Consumer<String> emitter = (Consumer<String>) rawEmitter;
+            try {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("toolCallId", toolCallId);
+                data.put("toolName", toolName);
+                data.put("state", state);
+                if (summary != null) data.put("summary", summary);
 
-            Map<String, Object> event = Map.of(
-                    "type", "data-tool-invocation",
-                    "id", UUID.randomUUID().toString(),
-                    "data", data
-            );
-            String json = objectMapper.writeValueAsString(event);
-            emitter.accept("data: " + json + "\n\n");
+                Map<String, Object> event = Map.of(
+                        "type", "data-tool-invocation",
+                        "id", UUID.randomUUID().toString(),
+                        "data", data
+                );
+                String json = objectMapper.writeValueAsString(event);
+                emitter.accept("data: " + json + "\n\n");
+            } catch (Exception e) {
+                log.debug("Failed to emit tool SSE event for {}/{}: {}", toolName, state, e.getMessage());
+            }
+        }
+
+        // 2. 發布 Spring 事件，供 Admin 即時監控接收
+        try {
+            UUID interviewId = extractInterviewId(toolContext);
+            eventPublisher.publishEvent(new AiToolExecutionEvent(interviewId, toolCallId, toolName, state, summary));
         } catch (Exception e) {
-            log.debug("Failed to emit tool SSE event for {}/{}: {}", toolName, state, e.getMessage());
+            log.debug("Failed to publish AiToolExecutionEvent for {}/{}: {}", toolName, state, e.getMessage());
         }
     }
 

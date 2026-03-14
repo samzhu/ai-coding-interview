@@ -8,9 +8,12 @@ export interface AiModelInfo {
 
 export interface ChatMessage {
   id: string;
-  role: "USER" | "ASSISTANT" | "SYSTEM";
+  role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL_CALL";
   content: string;
   createdAt: string;
+  model?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
 }
 
 export interface ConversationHistoryResponse {

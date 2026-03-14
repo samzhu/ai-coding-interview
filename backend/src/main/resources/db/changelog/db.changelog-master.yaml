@@ -29,3 +29,5 @@ databaseChangeLog:
       file: db/changelog/026-alter-ai-conversations-add-model.sql
   - include:
       file: db/changelog/027-alter-ai-conversations-allow-tool-role.sql
+  - include:
+      file: db/changelog/028-alter-ai-conversations-add-token-usage.sql

@@ -13,6 +13,7 @@ import {
 import { useRouteParam } from "@interview/shared/hooks/use-route-param";
 import { apiGet } from "@interview/shared/lib/api-client";
 import type { InterviewResponse } from "@interview/shared/types";
+import { ConversationHistory } from "@/components/admin/conversation-history";
 
 const STATUS_LABELS: Record<string, string> = {
   SCHEDULED: "已排定",
@@ -89,10 +90,6 @@ export function InterviewDetailClient() {
             <p className="font-medium">{interview.interviewerId}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">AI 模型</p>
-            <p className="font-medium">{interview.aiModel ?? "預設"}</p>
-          </div>
-          <div>
             <p className="text-muted-foreground">時長（分鐘）</p>
             <p className="font-medium">{interview.durationMinutes}</p>
           </div>
@@ -114,6 +111,8 @@ export function InterviewDetailClient() {
           </div>
         </CardContent>
       </Card>
+
+      <ConversationHistory interviewId={id!} />
 
       <div className="flex gap-2">
         <Button variant="outline" asChild>

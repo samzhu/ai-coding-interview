@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,9 +61,51 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
     @Override
     public List<Message> findByConversationId(String conversationId) {
         UUID interviewId = UUID.fromString(conversationId);
-        return repository.findByInterviewIdOrderByCreatedAtAsc(interviewId).stream()
+        List<Message> messages = repository.findByInterviewIdOrderByCreatedAtAsc(interviewId).stream()
                 .map(this::toSpringAiMessage)
-                .toList();
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        return sanitizeToolCallPairs(messages);
+    }
+
+    /**
+     * 防禦性清理：移除不完整的 tool call 配對，避免 OpenAI/Anthropic 因訊息序列錯誤回 400。
+     *
+     * MessageWindowChatMemory 視窗截斷可能拆開 ASSISTANT(tool_calls)+TOOL 配對：
+     * - ASSISTANT 有 toolCalls 但下一條不是 ToolResponseMessage → 降級為純文字訊息
+     * - 孤立的 ToolResponseMessage（前一條不是 ASSISTANT with toolCalls）→ 移除
+     *
+     * 這是防禦性兜底，根本原因是 advisor 設定（Fix 1）與 maxTokens（Fix 2）。
+     */
+    private List<Message> sanitizeToolCallPairs(List<Message> messages) {
+        List<Message> result = new ArrayList<>();
+        for (int i = 0; i < messages.size(); i++) {
+            Message msg = messages.get(i);
+            if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
+                boolean nextIsToolResponse = (i + 1 < messages.size())
+                        && messages.get(i + 1) instanceof ToolResponseMessage;
+                if (!nextIsToolResponse) {
+                    // 孤立的 tool_calls AssistantMessage：降級為純文字，避免 API 400
+                    log.debug("Sanitized orphaned AssistantMessage with toolCalls at index {} (expected during tool loop)", i);
+                    result.add(new AssistantMessage(am.getText() != null ? am.getText() : ""));
+                } else {
+                    result.add(msg);
+                }
+            } else if (msg instanceof ToolResponseMessage) {
+                // 檢查前一條是否為帶 toolCalls 的 AssistantMessage
+                boolean prevIsToolCallsAssistant = !result.isEmpty()
+                        && result.getLast() instanceof AssistantMessage prev
+                        && prev.hasToolCalls();
+                if (!prevIsToolCallsAssistant) {
+                    log.debug("Sanitized orphaned ToolResponseMessage at index {} (expected during tool loop)", i);
+                    // 移除：不加入 result
+                } else {
+                    result.add(msg);
+                }
+            } else {
+                result.add(msg);
+            }
+        }
+        return result;
     }
 
     @Override
@@ -145,6 +188,21 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
             payload.put("_type", "assistant_tool_calls");
             payload.put("text", am.getText() != null ? am.getText() : "");
             payload.put("toolCalls", toolCallMaps);
+            // 設計說明：持久化 Gemini thinking 模型的 thoughtSignatures（base64 編碼 byte[]），
+            // 確保跨 request（重啟/scaling）後歷史訊息仍帶 thought_signature，
+            // 避免 Gemini API 400 "Function call is missing a thought_signature" 錯誤。
+            // 非 Gemini thinking 模型的 AssistantMessage 不含此 metadata，序列化自動跳過。
+            // 參考：https://ai.google.dev/gemini-api/docs/thought-signatures
+            Object signaturesObj = am.getMetadata().get("thoughtSignatures");
+            if (signaturesObj instanceof List<?> sigList && !sigList.isEmpty()) {
+                List<String> base64Sigs = sigList.stream()
+                        .filter(s -> s instanceof byte[])
+                        .map(s -> Base64.getEncoder().encodeToString((byte[]) s))
+                        .toList();
+                if (!base64Sigs.isEmpty()) {
+                    payload.put("thoughtSignatures", base64Sigs);
+                }
+            }
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
             log.warn("Failed to serialize AssistantMessage toolCalls, falling back to text", e);
@@ -191,9 +249,23 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
                         .map(tc -> new AssistantMessage.ToolCall(
                                 tc.get("id"), tc.get("type"), tc.get("name"), tc.get("arguments")))
                         .toList();
+                // 還原 thoughtSignatures 到 AssistantMessage metadata，
+                // 讓 GoogleGenAiChatModel.messageToGeminiParts() 能重新附加到 functionCall parts。
+                Map<String, Object> properties = new HashMap<>();
+                Object sigsObj = payload.get("thoughtSignatures");
+                if (sigsObj instanceof List<?> sigList && !sigList.isEmpty()) {
+                    List<byte[]> signatures = sigList.stream()
+                            .filter(s -> s instanceof String)
+                            .map(s -> Base64.getDecoder().decode((String) s))
+                            .toList();
+                    if (!signatures.isEmpty()) {
+                        properties.put("thoughtSignatures", signatures);
+                    }
+                }
                 return AssistantMessage.builder()
                         .content(text)
                         .toolCalls(toolCalls)
+                        .properties(properties)
                         .build();
             }
         } catch (Exception e) {
