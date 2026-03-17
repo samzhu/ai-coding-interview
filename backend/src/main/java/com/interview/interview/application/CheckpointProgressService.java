@@ -3,18 +3,14 @@ package com.interview.interview.application;
 import com.interview.execution.ContainerService;
 import com.interview.execution.ExamConfig;
 import com.interview.execution.ExamConfigService;
-import com.interview.execution.ExecutionStatus;
-import com.interview.interview.CodeSubmittedEvent;
 import com.interview.interview.InterviewExpiredException;
 import com.interview.interview.InterviewTimeProvider;
 import com.interview.interview.domain.CheckpointResult;
-import com.interview.interview.domain.CheckpointResultStatus;
 import com.interview.interview.domain.InterviewStatus;
 import com.interview.interview.infrastructure.persistence.CheckpointResultRepository;
 import com.interview.interview.infrastructure.persistence.InterviewRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,7 +31,7 @@ public class CheckpointProgressService {
     private final InterviewService interviewService;
     private final ExamConfigService examConfigService;
     private final InterviewTimeProvider interviewTimeProvider;
-    private final ApplicationEventPublisher eventPublisher;
+    private final CheckpointTestExecutor checkpointTestExecutor;
 
     public CheckpointProgressService(InterviewRepository interviewRepository,
                                      CheckpointResultRepository checkpointResultRepository,
@@ -43,14 +39,14 @@ public class CheckpointProgressService {
                                      InterviewService interviewService,
                                      ExamConfigService examConfigService,
                                      InterviewTimeProvider interviewTimeProvider,
-                                     ApplicationEventPublisher eventPublisher) {
+                                     CheckpointTestExecutor checkpointTestExecutor) {
         this.interviewRepository = interviewRepository;
         this.checkpointResultRepository = checkpointResultRepository;
         this.containerService = containerService;
         this.interviewService = interviewService;
         this.examConfigService = examConfigService;
         this.interviewTimeProvider = interviewTimeProvider;
-        this.eventPublisher = eventPublisher;
+        this.checkpointTestExecutor = checkpointTestExecutor;
     }
 
     @Transactional(readOnly = true)
@@ -108,14 +104,21 @@ public class CheckpointProgressService {
     }
 
     public CheckpointView submitCode(SubmitCodeCommand command) {
+        log.info("interview={} checkpoint={} submit starting", command.interviewId(), command.checkpointId());
+
         var interview = interviewRepository.findById(command.interviewId())
-                .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + command.interviewId()));
+                .orElseThrow(() -> {
+                    log.warn("interview={} not found", command.interviewId());
+                    return new IllegalArgumentException("Interview not found: " + command.interviewId());
+                });
 
         if (interview.getInterviewStatus() != InterviewStatus.IN_PROGRESS) {
+            log.warn("interview={} submit rejected — status={}", command.interviewId(), interview.getInterviewStatus());
             throw new IllegalStateException("Interview is not in progress: " + command.interviewId());
         }
 
         if (interviewTimeProvider.isExpired(command.interviewId())) {
+            log.warn("interview={} submit rejected — interview expired", command.interviewId());
             try {
                 interviewService.completeInterview(command.interviewId());
             } catch (Exception ignored) {
@@ -125,9 +128,15 @@ public class CheckpointProgressService {
 
         var result = checkpointResultRepository
                 .findByInterviewIdAndCheckpointId(command.interviewId(), command.checkpointId())
-                .orElseThrow(() -> new IllegalArgumentException("Checkpoint not found for this interview"));
+                .orElseThrow(() -> {
+                    log.warn("interview={} checkpoint={} not found in repository", command.interviewId(), command.checkpointId());
+                    return new IllegalArgumentException("Checkpoint not found for this interview");
+                });
 
+        log.info("interview={} checkpoint={} ensuring container running", command.interviewId(), command.checkpointId());
         String containerId = interviewService.ensureContainerRunning(interview.getId());
+        log.info("interview={} checkpoint={} container ready, containerId={}", command.interviewId(), command.checkpointId(), containerId);
+
         var examConfig = examConfigService.getExamConfig(containerId);
         var checkpoint = findCheckpoint(examConfig, command.checkpointId());
 
@@ -135,34 +144,25 @@ public class CheckpointProgressService {
         checkpointResultRepository.save(result);
 
         String fullCommand = "cd " + examConfig.effectiveWorkspace() + " && " + checkpoint.testCommand();
-        var execResult = containerService.execCommand(containerId, fullCommand, 300);
 
-        String output = formatOutput(execResult.stdout(), execResult.stderr(), execResult.exitCode());
+        // 委派給背景執行緒非同步執行測試，避免 proxy timeout（Next.js ~30s < Docker exec 300s）
+        checkpointTestExecutor.executeAndGrade(
+                command.interviewId(), command.checkpointId(),
+                result.getCheckpointSequence(),
+                containerId, fullCommand);
 
-        if (execResult.status() == ExecutionStatus.SUCCESS || execResult.exitCode() == 0) {
-            result.markPassed(output);
-        } else {
-            result.markFailed(output);
-        }
-
-        checkpointResultRepository.save(result);
-
-        boolean passed = result.getCheckpointResultStatus() == CheckpointResultStatus.PASSED;
-        eventPublisher.publishEvent(new CodeSubmittedEvent(
-                command.interviewId(), command.checkpointId(), result.getCheckpointSequence(), passed));
-
-        if (passed) {
-            checkIfAllCheckpointsPassed(command.interviewId());
-        }
-
+        // 立即返回 IN_PROGRESS 狀態，前端透過 polling 取得最終結果
         return new CheckpointView(result, checkpoint);
     }
 
     public CheckpointView runTests(UUID interviewId, String checkpointId) {
+        log.info("interview={} checkpoint={} runTests starting", interviewId, checkpointId);
+
         var interview = interviewRepository.findById(interviewId)
                 .orElseThrow(() -> new IllegalArgumentException("Interview not found: " + interviewId));
 
         if (interviewTimeProvider.isExpired(interviewId)) {
+            log.warn("interview={} runTests rejected — interview expired", interviewId);
             throw new InterviewExpiredException("面試時間已到，無法執行測試");
         }
 
@@ -170,12 +170,17 @@ public class CheckpointProgressService {
                 .findByInterviewIdAndCheckpointId(interviewId, checkpointId)
                 .orElseThrow(() -> new IllegalArgumentException("Checkpoint not found for this interview"));
 
+        log.info("interview={} checkpoint={} ensuring container running", interviewId, checkpointId);
         String containerId = interviewService.ensureContainerRunning(interviewId);
+        log.info("interview={} checkpoint={} container ready, containerId={}", interviewId, checkpointId, containerId);
+
         var examConfig = examConfigService.getExamConfig(containerId);
         var checkpoint = findCheckpoint(examConfig, checkpointId);
 
         String fullCommand = "cd " + examConfig.effectiveWorkspace() + " && " + checkpoint.testCommand();
+        log.info("interview={} checkpoint={} executing test command", interviewId, checkpointId);
         var execResult = containerService.execCommand(containerId, fullCommand, 300);
+        log.info("interview={} checkpoint={} runTests exitCode={}", interviewId, checkpointId, execResult.exitCode());
         String output = formatOutput(execResult.stdout(), execResult.stderr(), execResult.exitCode());
 
         return new CheckpointView(
@@ -191,14 +196,6 @@ public class CheckpointProgressService {
                 result.getPassedAt());
     }
 
-    private ExamConfig.ExamCheckpoint findCheckpoint(ExamConfig examConfig, String checkpointId) {
-        return examConfig.checkpoints().stream()
-                .filter(cp -> cp.id().equals(checkpointId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Checkpoint '" + checkpointId + "' not found in exam config"));
-    }
-
     private String formatOutput(String stdout, String stderr, int exitCode) {
         var sb = new StringBuilder();
         if (stdout != null && !stdout.isBlank()) sb.append(stdout);
@@ -212,13 +209,12 @@ public class CheckpointProgressService {
         return sb.toString();
     }
 
-    private void checkIfAllCheckpointsPassed(UUID interviewId) {
-        List<CheckpointResult> allResults = checkpointResultRepository.findAllByInterviewId(interviewId);
-        boolean allPassed = allResults.stream()
-                .allMatch(r -> r.getCheckpointResultStatus() == CheckpointResultStatus.PASSED);
-        if (allPassed) {
-            interviewService.completeInterview(interviewId);
-        }
+    private ExamConfig.ExamCheckpoint findCheckpoint(ExamConfig examConfig, String checkpointId) {
+        return examConfig.checkpoints().stream()
+                .filter(cp -> cp.id().equals(checkpointId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Checkpoint '" + checkpointId + "' not found in exam config"));
     }
 
     public record CheckpointView(

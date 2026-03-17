@@ -2,6 +2,7 @@ package com.interview.interview.interfaces.rest;
 
 import com.interview.interview.application.CheckpointProgressService;
 import com.interview.interview.application.SubmitCodeCommand;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,6 +31,7 @@ class CheckpointController {
     }
 
     @PostMapping("/{checkpointId}/submit")
+    @ResponseStatus(HttpStatus.ACCEPTED)
     CheckpointResultResponse submitCode(@PathVariable UUID interviewId,
                                         @PathVariable String checkpointId) {
         return CheckpointResultResponse.from(
