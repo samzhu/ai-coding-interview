@@ -546,9 +546,10 @@ public class AiChatService {
                 long t0 = System.currentTimeMillis();
                 String callResult = cb.call(tc.arguments(), perCallContext);
                 long elapsed = System.currentTimeMillis() - t0;
-                log.info("[AI] loop#{} TOOL {} args={} → {}chars ({}ms)",
+                log.info("[AI] loop#{} TOOL {} args={} → {}chars ({}ms) result={}",
                         currentLoop, tc.name(), truncate(tc.arguments(), 120),
-                        callResult != null ? callResult.length() : 0, elapsed);
+                        callResult != null ? callResult.length() : 0, elapsed,
+                        truncate(callResult, 80));
                 // TODO: remove this workaround after spring-ai PR #5438 is merged
                 // Gemini FunctionResponse requires a JSON object; empty string causes parseJsonToMap() to crash
                 toolResponses.add(new ToolResponseMessage.ToolResponse(
@@ -573,12 +574,6 @@ public class AiChatService {
             messages = memory.get(conversationId);
             prompt = new Prompt(messages, options);
 
-            long uCount = messages.stream().filter(m -> m instanceof UserMessage).count();
-            long aCount = messages.stream().filter(m -> m instanceof AssistantMessage).count();
-            long tCount = messages.stream().filter(m -> m instanceof ToolResponseMessage).count();
-            log.info("[AI] loop#{} history: {} msgs [U:{} A:{} T:{}]",
-                    currentLoop, messages.size(), uCount, aCount, tCount);
-
             // 呼叫 model 取得下一輪回應
             // 發生錯誤時存入 fallback ASSISTANT，確保 ASSISTANT(toolCalls)+TOOL 後一定有 ASSISTANT
             try {
@@ -592,8 +587,8 @@ public class AiChatService {
             }
 
             assistantOutput = resolveAssistantOutput(response, conversationId);
-            log.info("[AI] loop#{} LLM → text={}chars tools={} preview={}",
-                    currentLoop,
+            log.info("[AI] loop#{} LLM({}msgs) → text={}chars tools={} preview={}",
+                    currentLoop, messages.size(),
                     assistantOutput.getText() == null ? 0 : assistantOutput.getText().length(),
                     assistantOutput.getToolCalls().stream().map(AssistantMessage.ToolCall::name).toList(),
                     truncate(assistantOutput.getText(), 200));

@@ -6,8 +6,10 @@ import com.interview.ai.internal.AiModelRegistry;
 import com.interview.ai.internal.InterviewWorkspaceTools;
 import com.interview.interview.InterviewAiPolicyProvider;
 import com.interview.interview.InterviewExpiredException;
+import com.interview.interview.InterviewFileProvider;
 import com.interview.interview.InterviewModelProvider;
 import com.interview.interview.InterviewTimeProvider;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,10 +61,16 @@ class AiChatServiceTest {
     @Mock
     private ChatMemory chatMemory;
 
+    @Mock
+    private InterviewFileProvider fileProvider;
+
+    @Mock
+    private ObjectMapper objectMapper;
+
     private AiChatService buildService() {
         return new AiChatService(repository, modelRegistry,
                 interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher,
-                workspaceTools, chatMemory);
+                workspaceTools, chatMemory, fileProvider, objectMapper);
     }
 
     /** 建立一個 no-tool-calls ChatResponse mock，回傳指定文字。

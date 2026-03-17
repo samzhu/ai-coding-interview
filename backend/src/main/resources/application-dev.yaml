@@ -1,0 +1,8 @@
+logging:
+  pattern:
+    # 設計說明：開發環境精簡格式 — 只留時間、level、traceId、class name、訊息。
+    # 去掉日期、PID、thread name、app name，降低水平空間佔用。
+    console: "%d{HH:mm:ss.SSS} %5level [%.12X{traceId:-            }] %-40.40logger{39} : %msg%n"
+  level:
+    # Spring AI 內建 tool/model logging（參考 https://docs.spring.io/spring-ai/reference/2.0/api/tools.html#_logging）
+    org.springframework.ai: DEBUG
