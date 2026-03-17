@@ -3,6 +3,7 @@ package com.interview.execution;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 @Service
 public class ContainerService {
@@ -41,6 +42,15 @@ public class ContainerService {
 
     public CodeExecutionResult execCommand(String containerId, String command, int timeoutSeconds) {
         return containerManager.execCommand(containerId, command, timeoutSeconds);
+    }
+
+    /**
+     * Streaming variant: calls outputConsumer for each output frame as it arrives.
+     * Enables real-time console output during long-running test executions.
+     */
+    public CodeExecutionResult execCommand(String containerId, String command,
+                                            int timeoutSeconds, Consumer<String> outputConsumer) {
+        return containerManager.execCommand(containerId, command, timeoutSeconds, outputConsumer);
     }
 
     /**

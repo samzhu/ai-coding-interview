@@ -3,6 +3,7 @@ package com.interview.interview.interfaces.rest;
 import com.interview.interview.application.CheckpointProgressService.CheckpointView;
 
 import java.time.Instant;
+import java.util.UUID;
 
 public record CheckpointResultResponse(
         String checkpointId,
@@ -14,7 +15,8 @@ public record CheckpointResultResponse(
         String status,
         String submittedCode,
         String executionOutput,
-        Instant passedAt) {
+        Instant passedAt,
+        UUID processId) {
 
     public static CheckpointResultResponse from(CheckpointView view) {
         return new CheckpointResultResponse(
@@ -27,6 +29,7 @@ public record CheckpointResultResponse(
                 view.status(),
                 view.submittedCode(),
                 view.executionOutput(),
-                view.passedAt());
+                view.passedAt(),
+                view.processId());
     }
 }

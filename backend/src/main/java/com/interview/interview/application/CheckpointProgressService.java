@@ -62,7 +62,7 @@ public class CheckpointProgressService {
         }
         var examConfig = examConfigService.getExamConfig(containerId);
         var checkpoint = findCheckpoint(examConfig, result.getCheckpointId());
-        return new CheckpointView(result, checkpoint);
+        return new CheckpointView(result, checkpoint, null);
     }
 
     @Transactional(readOnly = true)
@@ -81,7 +81,7 @@ public class CheckpointProgressService {
                     .sorted(Comparator.comparingInt(CheckpointResult::getCheckpointSequence))
                     .map(r -> new CheckpointView(r.getCheckpointId(), r.getCheckpointSequence(),
                             "", "", null, null, r.getStatus(), r.getSubmittedCode(),
-                            r.getExecutionOutput(), r.getPassedAt()))
+                            r.getExecutionOutput(), r.getPassedAt(), null))
                     .toList();
         }
 
@@ -96,9 +96,9 @@ public class CheckpointProgressService {
                     if (cp == null) {
                         return new CheckpointView(r.getCheckpointId(), r.getCheckpointSequence(),
                                 "", "", null, null, r.getStatus(), r.getSubmittedCode(),
-                                r.getExecutionOutput(), r.getPassedAt());
+                                r.getExecutionOutput(), r.getPassedAt(), null);
                     }
-                    return new CheckpointView(r, cp);
+                    return new CheckpointView(r, cp, null);
                 })
                 .toList();
     }
@@ -145,14 +145,16 @@ public class CheckpointProgressService {
 
         String fullCommand = "cd " + examConfig.effectiveWorkspace() + " && " + checkpoint.testCommand();
 
+        UUID processId = UUID.randomUUID();
         // 委派給背景執行緒非同步執行測試，避免 proxy timeout（Next.js ~30s < Docker exec 300s）
         checkpointTestExecutor.executeAndGrade(
+                processId,
                 command.interviewId(), command.checkpointId(),
                 result.getCheckpointSequence(),
                 containerId, fullCommand);
 
-        // 立即返回 IN_PROGRESS 狀態，前端透過 polling 取得最終結果
-        return new CheckpointView(result, checkpoint);
+        // 立即返回 IN_PROGRESS 狀態與 processId，前端透過 processId polling 取得即時輸出與最終結果
+        return new CheckpointView(result, checkpoint, processId);
     }
 
     public CheckpointView runTests(UUID interviewId, String checkpointId) {
@@ -193,7 +195,8 @@ public class CheckpointProgressService {
                 result.getStatus(),
                 result.getSubmittedCode(),
                 output,
-                result.getPassedAt());
+                result.getPassedAt(),
+                null);
     }
 
     private String formatOutput(String stdout, String stderr, int exitCode) {
@@ -227,10 +230,11 @@ public class CheckpointProgressService {
             String status,
             String submittedCode,
             String executionOutput,
-            Instant passedAt) {
+            Instant passedAt,
+            UUID processId) {
 
         /** ExamConfig 版本的便利建構子，sequenceNumber 從 CheckpointResult 取得 */
-        public CheckpointView(CheckpointResult result, ExamConfig.ExamCheckpoint checkpoint) {
+        public CheckpointView(CheckpointResult result, ExamConfig.ExamCheckpoint checkpoint, UUID processId) {
             this(
                     result.getCheckpointId(),
                     result.getCheckpointSequence(),
@@ -241,7 +245,8 @@ public class CheckpointProgressService {
                     result.getStatus(),
                     result.getSubmittedCode(),
                     result.getExecutionOutput(),
-                    result.getPassedAt());
+                    result.getPassedAt(),
+                    processId);
         }
     }
 }

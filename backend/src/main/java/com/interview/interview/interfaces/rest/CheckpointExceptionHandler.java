@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = CheckpointController.class)
+@RestControllerAdvice(assignableTypes = { CheckpointController.class, TestExecutionController.class })
 class CheckpointExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CheckpointExceptionHandler.class);

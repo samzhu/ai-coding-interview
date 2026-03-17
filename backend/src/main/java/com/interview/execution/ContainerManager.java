@@ -1,6 +1,7 @@
 package com.interview.execution;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 public interface ContainerManager {
 
@@ -17,6 +18,16 @@ public interface ContainerManager {
     void writeFile(String containerId, String path, String content);
 
     CodeExecutionResult execCommand(String containerId, String command, int timeoutSeconds);
+
+    /**
+     * Executes a command in the container and calls outputConsumer for each output frame received.
+     * Enables real-time streaming of console output to the caller.
+     * Default implementation ignores the consumer and delegates to the 3-param version.
+     */
+    default CodeExecutionResult execCommand(String containerId, String command,
+                                             int timeoutSeconds, Consumer<String> outputConsumer) {
+        return execCommand(containerId, command, timeoutSeconds);
+    }
 
     /**
      * 在指定容器中建立互動式 bash 終端 session（TTY 模式）。

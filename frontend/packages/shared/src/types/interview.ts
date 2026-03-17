@@ -55,6 +55,15 @@ export interface CheckpointResultResponse {
   executionOutput: string | null;
   passedAt: string | null;
   aiEnabled: boolean;
+  processId: string | null;
+}
+
+export interface ExecutionStatusResponse {
+  processId: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  consoleOutput: string;
+  exitCode: number | null;
+  passed: boolean | null;
 }
 
 export interface CreateInterviewRequest {

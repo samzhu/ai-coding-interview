@@ -18,6 +18,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.function.Consumer;
 
 @TestConfiguration
 public class TestCodeExecutorConfig {
@@ -142,6 +143,14 @@ public class TestCodeExecutorConfig {
                 case FORCE_PASS -> new CodeExecutionResult(0, "All tests passed", "", 10L, ExecutionStatus.SUCCESS);
                 case FORCE_FAIL -> new CodeExecutionResult(1, "", "Tests failed", 10L, ExecutionStatus.ERROR);
             };
+        }
+
+        @Override
+        public CodeExecutionResult execCommand(String containerId, String command,
+                                                int timeoutSeconds, Consumer<String> outputConsumer) {
+            CodeExecutionResult result = execCommand(containerId, command, timeoutSeconds);
+            outputConsumer.accept(result.stdout().isBlank() ? result.stderr() : result.stdout());
+            return result;
         }
 
         @Override

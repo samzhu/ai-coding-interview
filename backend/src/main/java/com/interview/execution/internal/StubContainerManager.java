@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 @Component
 @Profile("lab")
@@ -46,6 +47,13 @@ class StubContainerManager implements ContainerManager {
 
     @Override
     public CodeExecutionResult execCommand(String containerId, String command, int timeoutSeconds) {
+        return new CodeExecutionResult(0, "stub output", "", 0L, ExecutionStatus.SUCCESS);
+    }
+
+    @Override
+    public CodeExecutionResult execCommand(String containerId, String command,
+                                            int timeoutSeconds, Consumer<String> outputConsumer) {
+        outputConsumer.accept("stub output\n");
         return new CodeExecutionResult(0, "stub output", "", 0L, ExecutionStatus.SUCCESS);
     }
 

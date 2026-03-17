@@ -49,6 +49,7 @@ interface InterviewState {
   isSubmitting: boolean;
   isRunning: boolean;
   lastExecution: ExecutionResponse | null;
+  liveConsoleOutput: string | null;
   // VSCode 風格 inline diff 審查狀態，null 表示未進入 diff 模式
   diffReview: DiffReviewState | null;
   // 獨立 Diff Tab 是否 active（true 時編輯器區域顯示 DiffViewer）
@@ -69,6 +70,7 @@ type InterviewAction =
   | { type: "CLOSE_FILE"; payload: string }
   | { type: "SET_SUBMITTING"; payload: boolean }
   | { type: "SET_RUNNING"; payload: boolean }
+  | { type: "SET_LIVE_OUTPUT"; payload: string }
   | { type: "SET_EXECUTION"; payload: ExecutionResponse }
   | { type: "SET_STATUS"; payload: InterviewStatus }
   | { type: "LOAD_FILES"; payload: Map<string, CheckpointFileState> }
@@ -218,9 +220,11 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
         const clearedCheckpoint = state.checkpoint
           ? { ...state.checkpoint, executionOutput: null, status: "IN_PROGRESS" as const }
           : state.checkpoint;
-        return { ...state, isRunning: true, lastExecution: null, checkpoint: clearedCheckpoint };
+        return { ...state, isRunning: true, lastExecution: null, liveConsoleOutput: null, checkpoint: clearedCheckpoint };
       }
       return { ...state, isRunning: false };
+    case "SET_LIVE_OUTPUT":
+      return { ...state, liveConsoleOutput: action.payload };
     case "SET_EXECUTION":
       return { ...state, lastExecution: action.payload };
     case "SET_STATUS":
@@ -384,6 +388,7 @@ function reducer(state: InterviewState, action: InterviewAction): InterviewState
         ...state,
         isSubmitting: false,
         isRunning: false,
+        liveConsoleOutput: null,
         checkpoint: result,
         aiEnabled: result.aiEnabled ?? true,
         lastExecution: action.payload.execution,
@@ -407,6 +412,7 @@ interface InterviewContextValue {
   switchCheckpoint: (checkpointId: string) => void;
   setSubmitting: (v: boolean) => void;
   setRunning: (v: boolean) => void;
+  setLiveOutput: (output: string) => void;
   setExecution: (result: ExecutionResponse) => void;
   setStatus: (status: InterviewStatus) => void;
   applyCheckpointResult: (
@@ -466,6 +472,7 @@ export function InterviewProvider({
     isSubmitting: false,
     isRunning: false,
     lastExecution: null,
+    liveConsoleOutput: null,
     diffReview: null,
     diffTabActive: false,
     changeSets: new Map<string, ChangeSet>(),
@@ -506,6 +513,10 @@ export function InterviewProvider({
 
   const setRunning = useCallback((v: boolean) => {
     dispatch({ type: "SET_RUNNING", payload: v });
+  }, []);
+
+  const setLiveOutput = useCallback((output: string) => {
+    dispatch({ type: "SET_LIVE_OUTPUT", payload: output });
   }, []);
 
   const setExecution = useCallback((result: ExecutionResponse) => {
@@ -570,6 +581,7 @@ export function InterviewProvider({
         switchCheckpoint,
         setSubmitting,
         setRunning,
+        setLiveOutput,
         setExecution,
         setStatus,
         applyCheckpointResult,

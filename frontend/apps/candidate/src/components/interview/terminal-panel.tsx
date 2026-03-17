@@ -14,6 +14,7 @@
 import { useState, useEffect, useRef } from "react";
 import { XtermTerminal } from "./xterm-terminal";
 import { useInterview } from "@/contexts/interview-context";
+import { Terminal } from "@interview/shared/components/ai-elements/terminal";
 
 interface TerminalPanelProps {
   interviewId: string;
@@ -185,43 +186,33 @@ export function TerminalPanel({
 
 /**
  * 測試結果顯示區。三種狀態：
- * 1. isRunning（有 testCommand）→ 嵌入 XtermTerminal 即時串流指令輸出，清空舊結果
- * 2. 有結果 → 靜態顯示 PASSED/FAILED badge + output
+ * 1. isRunning → 即時顯示 liveConsoleOutput（每 2 秒 polling 更新），使用 Terminal 元件
+ * 2. 有結果 → 靜態顯示 PASSED/FAILED badge + output（Terminal 元件，isStreaming=false）
  * 3. 無結果 → placeholder 提示
  *
- * 設計說明：Run 按鈕同時觸發 submit()（取得 checkpoint 評分）和 xterm 串流（即時輸出回饋）。
- * 兩者在同一 Docker container 中各自執行一次 testCommand（測試跑兩次），MVP 可接受。
- * isRunning 從 true 變 false（submit 回傳）時，xterm 自動 unmount，切回靜態結果顯示。
+ * 設計說明：submit() 後後端非同步執行測試，前端透過 GET /executions/{processId} polling 取得
+ * 累積的 consoleOutput。liveConsoleOutput 每次 polling 整批替換（非差量）。
  */
 function TestResultsContent() {
   const { state } = useInterview();
-  const { checkpoint, lastExecution, isRunning, interviewId } = state;
+  const { checkpoint, lastExecution, isRunning, liveConsoleOutput } = state;
 
-  // Running 狀態：顯示執行中 spinner + testCommand 名稱
-  // 設計說明：不在此處同時送 testCommand 到 xterm，避免與 submit() 後端執行產生雙重 Gradle 鎖定衝突。
-  // Gradle 程序有排他 build lock，兩個並行 `./gradlew` 會導致 daemon 崩潰（OOM/killed）。
-  // 等 submit() 完成後再展示靜態結果，確保測試只跑一次且結果完整。
   if (isRunning) {
+    const liveOutput = liveConsoleOutput ?? "";
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-3 text-xs text-[#858585]">
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-3 h-3 border-2 border-[#007acc] border-t-transparent rounded-full animate-spin" />
-          <span className="text-[#cccccc]">正在執行測試...</span>
-        </div>
-        {checkpoint?.testCommand && (
-          <code className="text-[#4ec9b0] bg-[#252526] px-2 py-1 rounded text-[11px] max-w-xs truncate">
-            {checkpoint.testCommand}
-          </code>
-        )}
-      </div>
+      <Terminal
+        output={liveOutput || "等待測試輸出..."}
+        isStreaming={true}
+        autoScroll={true}
+        className="flex-1 rounded-none border-0 border-none h-full"
+      />
     );
   }
 
   const output = checkpoint?.executionOutput ?? lastExecution?.stdout ?? null;
-  const stderr = lastExecution?.stderr;
   const status = checkpoint?.status;
 
-  if (!output && !stderr) {
+  if (!output) {
     return (
       <div className="flex items-center justify-center flex-1 text-xs text-[#585858]">
         提交程式碼後，測試結果將顯示在此處
@@ -230,34 +221,31 @@ function TestResultsContent() {
   }
 
   return (
-    <div className="p-3 space-y-2">
+    <div className="flex flex-col flex-1 overflow-hidden">
       {status && (
-        <div
-          className={`text-xs font-semibold px-2 py-1 rounded inline-block ${
-            status === "PASSED"
-              ? "bg-emerald-400/10 text-emerald-400"
+        <div className="px-3 pt-2 shrink-0">
+          <div
+            className={`text-xs font-semibold px-2 py-1 rounded inline-block ${
+              status === "PASSED"
+                ? "bg-emerald-400/10 text-emerald-400"
+                : status === "FAILED"
+                  ? "bg-red-400/10 text-red-400"
+                  : "bg-zinc-500/20 text-zinc-400"
+            }`}
+          >
+            {status === "PASSED"
+              ? "全部測試通過"
               : status === "FAILED"
-                ? "bg-red-400/10 text-red-400"
-                : "bg-zinc-500/20 text-zinc-400"
-          }`}
-        >
-          {status === "PASSED"
-            ? "全部測試通過"
-            : status === "FAILED"
-              ? "測試失敗"
-              : "執行中"}
+                ? "測試失敗"
+                : "執行中"}
+          </div>
         </div>
       )}
-      {output && (
-        <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap leading-relaxed">
-          {output}
-        </pre>
-      )}
-      {stderr && (
-        <pre className="text-xs font-mono text-[#f44747] whitespace-pre-wrap leading-relaxed">
-          {stderr}
-        </pre>
-      )}
+      <Terminal
+        output={output}
+        isStreaming={false}
+        className="flex-1 rounded-none border-0 border-t border-zinc-800"
+      />
     </div>
   );
 }

@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @Component
 @Profile("!lab")
@@ -169,6 +170,66 @@ class DockerContainerManager implements ContainerManager {
                             } else if (frame.getStreamType() == StreamType.STDERR) {
                                 stderr.append(text);
                             }
+                        }
+
+                        @Override
+                        public void onComplete() {
+                            latch.countDown();
+                        }
+
+                        @Override
+                        public void onError(Throwable throwable) {
+                            latch.countDown();
+                        }
+                    });
+
+            boolean finished = latch.await(timeoutSeconds, TimeUnit.SECONDS);
+            long durationMs = System.currentTimeMillis() - startMs;
+
+            if (!finished) {
+                return new CodeExecutionResult(-1, "", "Execution timed out after " + timeoutSeconds + "s",
+                        durationMs, ExecutionStatus.TIMEOUT);
+            }
+
+            var inspect = dockerClient.inspectExecCmd(exec.getId()).exec();
+            int exitCode = inspect.getExitCodeLong() != null ? inspect.getExitCodeLong().intValue() : -1;
+            ExecutionStatus status = exitCode == 0 ? ExecutionStatus.SUCCESS : ExecutionStatus.ERROR;
+            return new CodeExecutionResult(exitCode, stdout.toString().trim(), stderr.toString().trim(),
+                    durationMs, status);
+
+        } catch (Exception e) {
+            return new CodeExecutionResult(-1, "", e.getMessage(), System.currentTimeMillis() - startMs,
+                    ExecutionStatus.ERROR);
+        }
+    }
+
+    @Override
+    public CodeExecutionResult execCommand(String containerId, String command,
+                                            int timeoutSeconds, Consumer<String> outputConsumer) {
+        long startMs = System.currentTimeMillis();
+        try {
+            ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
+                    .withCmd("bash", "-c", command)
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
+                    .exec();
+
+            StringBuilder stdout = new StringBuilder();
+            StringBuilder stderr = new StringBuilder();
+            CountDownLatch latch = new CountDownLatch(1);
+
+            dockerClient.execStartCmd(exec.getId())
+                    .exec(new ResultCallback.Adapter<Frame>() {
+                        @Override
+                        public void onNext(Frame frame) {
+                            String text = new String(frame.getPayload(), StandardCharsets.UTF_8);
+                            if (frame.getStreamType() == StreamType.STDOUT) {
+                                stdout.append(text);
+                            } else if (frame.getStreamType() == StreamType.STDERR) {
+                                stderr.append(text);
+                            }
+                            // Stream each frame to caller for real-time console output
+                            outputConsumer.accept(text);
                         }
 
                         @Override
