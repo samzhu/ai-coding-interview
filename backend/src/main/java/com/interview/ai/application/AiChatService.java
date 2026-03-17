@@ -4,6 +4,7 @@ import com.interview.ai.AiChatMessageEvent;
 import com.interview.ai.domain.ConversationMessage;
 import com.interview.ai.infrastructure.persistence.ConversationMessageRepository;
 import com.interview.ai.internal.AiModelRegistry;
+import com.interview.ai.internal.CrossModelChatMemory;
 import com.interview.ai.internal.InterviewWorkspaceTools;
 import com.interview.interview.InterviewAiPolicyProvider;
 import com.interview.interview.InterviewExpiredException;
@@ -16,25 +17,31 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.support.ToolCallbacks;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
+import org.springframework.ai.chat.model.Generation;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
 
 /**
  * AI 聊天服務。
@@ -49,6 +56,12 @@ import java.util.function.Consumer;
  * 改為直接呼叫 ChatModel.call(Prompt) + ToolCallingManager.executeToolCalls()，
  * 在每個步驟後手動 chatMemory.add()，確保 user、ASSISTANT(tool_calls)、
  * ToolResponseMessage 及最終 ASSISTANT 回應全部持久化到 DB。
+ *
+ * action: 前綴設計：
+ * 候選人 accept/reject editProposal 時，前端呼叫 sendMessage("action:ACCEPTED") 或
+ * sendMessage("action:REJECTED")，透過原本的 /chat/stream 端點傳入。
+ * streamChat() 偵測 action: 前綴後 strip 前綴，以純 "ACCEPTED"/"REJECTED" 當一般
+ * user message 處理，不發布 USER 事件（action 不是真正的使用者訊息）。
  */
 @Service
 public class AiChatService {
@@ -62,10 +75,9 @@ public class AiChatService {
     private final InterviewAiPolicyProvider aiPolicyProvider;
     private final InterviewTimeProvider interviewTimeProvider;
     private final ApplicationEventPublisher eventPublisher;
-    // AI 工具集（listFiles、readFile、runCommand），透過 tool calling 讓 AI 自動呼叫
+    // AI 工具集（listFiles、readFile、runCommand、editProposal），透過 tool calling 讓 AI 自動呼叫
     private final InterviewWorkspaceTools workspaceTools;
     private final ChatMemory chatMemory;
-    private final ToolCallingManager toolCallingManager;
 
     public AiChatService(ConversationMessageRepository repository,
                          AiModelRegistry modelRegistry,
@@ -74,8 +86,7 @@ public class AiChatService {
                          InterviewTimeProvider interviewTimeProvider,
                          ApplicationEventPublisher eventPublisher,
                          InterviewWorkspaceTools workspaceTools,
-                         ChatMemory chatMemory,
-                         ToolCallingManager toolCallingManager) {
+                         ChatMemory chatMemory) {
         this.repository = repository;
         this.modelRegistry = modelRegistry;
         this.interviewModelProvider = interviewModelProvider;
@@ -84,7 +95,6 @@ public class AiChatService {
         this.eventPublisher = eventPublisher;
         this.workspaceTools = workspaceTools;
         this.chatMemory = chatMemory;
-        this.toolCallingManager = toolCallingManager;
     }
 
     @Transactional
@@ -111,7 +121,8 @@ public class AiChatService {
 
         Map<String, Object> toolContextMap = Map.of("interviewId", interviewId.toString());
         org.springframework.ai.chat.model.ChatResponse aiResponse =
-                callWithToolLoop(chatModelOpt.get(), conversationId, userMessage, toolContextMap);
+                callWithToolLoop(chatModelOpt.get(), conversationId, userMessage, toolContextMap,
+                        resolveModelId(interviewId, null));
 
         String response = aiResponse.getResult().getOutput().getText();
         updateLastAssistantTokenUsage(interviewId, aiResponse);
@@ -146,18 +157,29 @@ public class AiChatService {
         String resolvedModelId = resolveModelId(interviewId, modelIdOverride);
         Optional<ChatModel> chatModelOpt = resolveChatModel(resolvedModelId);
 
-        // 發布 USER 訊息事件（DB 寫入由 callWithToolLoop 內的 chatMemory.add() 完成）
-        try {
-            eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.USER, userMessage));
-        } catch (Exception e) {
-            log.error("Failed to publish user message event for interview {}", interviewId, e);
+        // 設計說明：Accept/Reject 透過原本的 /chat/stream 送入，用 action: 前綴區分。
+        // Strip 前綴後當一般 user message 處理（LLM 的 system prompt 已告知會收到 ACCEPTED/REJECTED）。
+        // 不發布 AiChatMessageEvent USER 事件（action 不是真正的使用者訊息，前端也不渲染）。
+        final String effectiveUserMessage;
+        final boolean isAction = userMessage.startsWith("action:");
+        if (isAction) {
+            effectiveUserMessage = userMessage.substring("action:".length()); // "ACCEPTED" or "REJECTED"
+            log.info("[AI-DIAG] interview={} action message detected: {}", interviewId, effectiveUserMessage);
+        } else {
+            effectiveUserMessage = userMessage;
+            // 發布 USER 訊息事件（DB 寫入由 callWithToolLoop 內的 chatMemory.add() 完成）
+            try {
+                eventPublisher.publishEvent(new AiChatMessageEvent(interviewId, MessageType.USER, userMessage));
+            } catch (Exception e) {
+                log.error("Failed to publish user message event for interview {}", interviewId, e);
+            }
         }
 
         if (chatModelOpt.isEmpty()) {
             String stub = "AI assistant is not configured for this environment. " +
                     "Set GOOGLE_GENAI_API_KEY to enable AI-powered hints.";
             try {
-                repository.save(ConversationMessage.create(interviewId, MessageType.USER, userMessage));
+                repository.save(ConversationMessage.create(interviewId, MessageType.USER, effectiveUserMessage));
                 repository.save(ConversationMessage.create(interviewId, MessageType.ASSISTANT, stub));
             } catch (Exception e) {
                 log.error("Failed to save stub messages for interview {}", interviewId, e);
@@ -178,24 +200,27 @@ public class AiChatService {
         // SSE 保活由兩層機制負責：
         //   1. tool 事件（toolSseEmitter）：每個工具執行前後推送 SSE，同時維持 HTTP 連線
         //   2. heartbeat（15s SSE comment）：在 model call 無 tool 事件期間維持連線
-        // Controller 的 latch.await(330s) 作為最終兜底安全閥。
+        // Controller 的 latch.await(5min) 作為最終兜底安全閥。
         StringBuilder fullResponse = new StringBuilder();
         final ChatModel chatModel = chatModelOpt.get();
 
         Flux<String> stream = Flux.defer(() -> {
                     long t0 = System.currentTimeMillis();
-                    log.info("[AI-DIAG] interview={} .call() starting (model={})", interviewId, resolvedModelId);
+                    log.info("[AI-DIAG] interview={} .call() starting (model={}, isAction={})",
+                            interviewId, resolvedModelId, isAction);
 
                     org.springframework.ai.chat.model.ChatResponse aiResponse =
-                            callWithToolLoop(chatModel, conversationId, userMessage, toolContextMap);
+                            callWithToolLoop(chatModel, conversationId, effectiveUserMessage, toolContextMap,
+                                    resolvedModelId);
 
                     String fullContent = aiResponse.getResult().getOutput().getText();
-                    updateLastAssistantTokenUsage(interviewId, aiResponse);
 
                     long elapsed = System.currentTimeMillis() - t0;
                     log.info("[AI-DIAG] interview={} .call() completed in {}ms, content={}",
                             interviewId, elapsed,
                             fullContent == null ? "null" : "length=" + fullContent.length());
+
+                    updateLastAssistantTokenUsage(interviewId, aiResponse);
 
                     if (fullContent == null || fullContent.isBlank()) {
                         log.warn("[AI-DIAG] interview={} empty content after tool calling", interviewId);
@@ -210,7 +235,6 @@ public class AiChatService {
                 .doOnNext(fullResponse::append)
                 .doOnComplete(() -> {
                     try {
-                        // Advisor 已將 user/tool/assistant 訊息存入 DB；此處只發布事件供監控使用
                         log.info("[AI-DIAG] interview={} assistant sent, length={}", interviewId, fullResponse.length());
                         eventPublisher.publishEvent(new AiChatMessageEvent(
                                 interviewId, MessageType.ASSISTANT, fullResponse.toString()));
@@ -247,72 +271,125 @@ public class AiChatService {
     /**
      * 設計說明：User Controlled Tool Execution — 手動 tool loop + 手動 ChatMemory 管理。
      *
-     * Flow：
-     * 1. 存 user message → chatMemory（持久化到 DB）
-     * 2. 從 chatMemory 取完整歷史建立 Prompt（含 system prompt + tool options）
-     * 3. 呼叫 chatModel.call(prompt)
-     * 4. 存 ASSISTANT 回應（可能含 tool_calls）→ chatMemory
-     * 5. 若有 tool calls：執行工具 → 存 ToolResponseMessage → 重新建立 Prompt → 再呼叫 model
-     * 6. 重複直到 no more tool calls
-     * 7. 回傳最終 ChatResponse（供外層取文字 + token usage）
+     * 為何自行執行 tool calls（而非 ToolCallingManager）：
+     * ToolCallingManager.executeToolCalls() 是黑盒，可能 mutate AssistantMessage 物件，
+     * 導致後續 prompt 中 tool_result 找不到對應的 tool_use（Anthropic API 400 錯誤）。
+     * 改為自行建立 ToolCallback map → 執行 → 建構 ToolResponseMessage，完全掌控 ID 配對。
+     * 參考：https://docs.spring.io/spring-ai/reference/2.0/api/tools.html（User Controlled Tool Execution）
+     *
+     * 此方法建立 CrossModelChatMemory、存入 userMessage，然後呼叫 callLLMAndLoop()。
      */
     private org.springframework.ai.chat.model.ChatResponse callWithToolLoop(
             ChatModel chatModel, String conversationId,
-            String userMessage, Map<String, Object> toolContextMap) {
+            String userMessage, Map<String, Object> toolContextMap, String resolvedModelId) {
+
+        final CrossModelChatMemory memory = new CrossModelChatMemory(chatMemory, modelRegistry, resolvedModelId);
+        memory.add(conversationId, List.of(new UserMessage(userMessage)));
+        return callLLMAndLoop(chatModel, memory, conversationId, toolContextMap, resolvedModelId);
+    }
+
+    /**
+     * 設計說明：從當前 memory 狀態繼續 LLM 對話的核心方法。
+     *
+     * 載入歷史 → chatModel.call() → tool loop（editProposal 正常執行，不中斷）。
+     *
+     * Flow：
+     * 1. 從 memory 取完整歷史建立 Prompt（含 system prompt + tool options）
+     * 2. 呼叫 chatModel.call(prompt)
+     * 3. 存 ASSISTANT 回應（可能含 tool_calls）→ memory
+     * 4. 若有 tool calls：逐一執行 → 存 TOOL responses → 重新建立 Prompt → 再呼叫 model
+     * 5. 重複直到 no more tool calls
+     * 6. 回傳最終 ChatResponse
+     */
+    private org.springframework.ai.chat.model.ChatResponse callLLMAndLoop(
+            ChatModel chatModel, CrossModelChatMemory memory,
+            String conversationId, Map<String, Object> toolContextMap, String resolvedModelId) {
+
+        // 建立 ToolCallback map，供 while loop 內逐一查找並執行
+        ToolCallback[] callbacks = ToolCallbacks.from(workspaceTools);
+        Map<String, ToolCallback> callbackMap = Arrays.stream(callbacks)
+                .collect(Collectors.toMap(cb -> cb.getToolDefinition().name(), cb -> cb));
+        ToolContext toolContext = new ToolContext(toolContextMap);
 
         ToolCallingChatOptions options = ToolCallingChatOptions.builder()
-                .toolCallbacks(ToolCallbacks.from(workspaceTools))
+                .toolCallbacks(callbacks)
                 .toolContext(toolContextMap)
                 .internalToolExecutionEnabled(false)
                 .build();
 
-        chatMemory.add(conversationId, List.of(new UserMessage(userMessage)));
+        // 從 DB 讀取歷史（含 orphan cleanup + provider 適配）
+        List<Message> messages = memory.get(conversationId);
 
-        // 設計說明：使用 in-memory 訊息清單建構 prompt，而非每次迭代從 DB 重新載入。
-        // 根本原因：Gemini thinking 模型的 AssistantMessage.properties() 含 thoughtSignatures（List<byte[]>），
-        // 每次 DB round-trip 都會丟失這些 metadata（ConversationChatMemoryRepository 無法序列化 byte[]）。
-        // 丟失 thoughtSignatures → 下次 API call 的 functionCall parts 缺少 thought_signature → 400 錯誤。
-        // 解法：第一次呼叫後，以 in-memory list 累積所有訊息（含 metadata），取代 chatMemory.get() 重載。
-        // chatMemory.add() 仍持久化到 DB，確保重啟安全；in-memory 只用於當次 request 的 prompt 建構。
-        // 參考：https://ai.google.dev/gemini-api/docs/thought-signatures
-        List<Message> inMemoryMessages = new ArrayList<>(chatMemory.get(conversationId));
-        Prompt prompt = new Prompt(inMemoryMessages, options);
+        // 防禦性驗證：適配後最後一條訊息應為 USER（對 callWithToolLoop 路徑）
+        if (!messages.isEmpty() && !(messages.getLast() instanceof UserMessage)) {
+            log.debug("[AI-DIAG] interview={} callLLMAndLoop: last message type={}",
+                    conversationId, messages.getLast().getMessageType());
+        }
 
-        // 第一次呼叫：若失敗（API key 無效、模型不存在等）直接拋出，DB 只有 USER 訊息，不需 fallback
+        Prompt prompt = new Prompt(messages, options);
+
+        // 第一次呼叫：若失敗且歷史含 tool call，嘗試降級為文字摺疊後重試
         org.springframework.ai.chat.model.ChatResponse response;
         try {
             response = chatModel.call(prompt);
         } catch (Exception e) {
             log.error("[AI-DIAG] interview={} 1st chatModel.call() failed. Error: {}",
                     conversationId, e.getMessage(), e);
-            throw new RuntimeException("AI 呼叫失敗：" + e.getMessage(), e);
+            boolean hasToolHistory = messages.stream()
+                    .anyMatch(m -> m instanceof AssistantMessage am && am.hasToolCalls());
+            if (hasToolHistory) {
+                log.warn("[AI-DIAG] interview={} retrying with folded tool history", conversationId);
+                prompt = new Prompt(new ArrayList<>(memory.getFolded(conversationId)), options);
+                response = chatModel.call(prompt);
+            } else {
+                throw new RuntimeException("AI 呼叫失敗：" + e.getMessage(), e);
+            }
         }
-        AssistantMessage firstOutput = response.getResult().getOutput();
-        chatMemory.add(conversationId, List.of(firstOutput));
-        inMemoryMessages.add(firstOutput);
 
+        // 解析並持久化第一次 ASSISTANT 回應
+        // 設計說明：resolveAssistantOutput() 掃描所有 Generation，將文字 + tool calls
+        // 合併為一個 AssistantMessage。這是因為部分 provider（如 Anthropic/Claude）在
+        // Spring AI 2.0.0-M2 中可能將文字 content block 和 tool_use block 拆成多個
+        // Generation，導致 response.getResult()（只取第一個）拿不到 tool calls，
+        // 而 response.hasToolCalls()（掃描所有）返回 true，產生不一致。
+        AssistantMessage assistantOutput = resolveAssistantOutput(response, conversationId);
+        memory.add(conversationId, List.of(assistantOutput));
+
+        // Tool loop — 以 assistantOutput.getToolCalls() 為準，有 tool calls 就執行
         int loopCount = 0;
-        while (response.hasToolCalls()) {
+        while (!assistantOutput.getToolCalls().isEmpty()) {
             loopCount++;
             final int currentLoop = loopCount;
-            // 診斷 log：記錄 tool calls 內容，確認是否缺少 thought_signature
+
             if (log.isDebugEnabled()) {
-                response.getResult().getOutput().getToolCalls().forEach(tc ->
+                assistantOutput.getToolCalls().forEach(tc ->
                         log.debug("[AI-DIAG] interview={} loop#{} toolCall id={} name={} args={}",
                                 conversationId, currentLoop, tc.id(), tc.name(), tc.arguments()));
             }
-            ToolExecutionResult result = toolCallingManager.executeToolCalls(prompt, response);
-            Message toolResponse = result.conversationHistory().getLast();
-            // 1. 持久化到 DB（保證重啟安全）
-            chatMemory.add(conversationId, List.of(toolResponse));
-            // 2. 加入 in-memory list（保留原始 metadata 含 thoughtSignatures）
-            inMemoryMessages.add(toolResponse);
-            // 3. 用 in-memory 建構下次 prompt（非 chatMemory.get()，避免 DB round-trip 丟失 metadata）
-            prompt = new Prompt(inMemoryMessages, options);
 
-            // 診斷 log：記錄即將送出的 prompt 訊息清單（message type + toolCalls summary）
+            // 執行 tool calls：逐一查找 ToolCallback → 執行 → 收集 ToolResponse
+            List<ToolResponseMessage.ToolResponse> toolResponses = new ArrayList<>();
+            for (AssistantMessage.ToolCall tc : assistantOutput.getToolCalls()) {
+                ToolCallback cb = callbackMap.get(tc.name());
+                if (cb == null) {
+                    log.warn("[AI-DIAG] interview={} loop#{} unknown tool '{}'", conversationId, currentLoop, tc.name());
+                    toolResponses.add(new ToolResponseMessage.ToolResponse(
+                            tc.id(), tc.name(), "Error: unknown tool '" + tc.name() + "'"));
+                    continue;
+                }
+                String callResult = cb.call(tc.arguments(), toolContext);
+                toolResponses.add(new ToolResponseMessage.ToolResponse(
+                        tc.id(), tc.name(), callResult != null ? callResult : ""));
+            }
+
+            memory.add(conversationId, List.of(ToolResponseMessage.builder().responses(toolResponses).build()));
+
+            // 從 DB 重新讀取完整歷史建構 prompt（含 orphan cleanup + provider 適配）
+            messages = memory.get(conversationId);
+            prompt = new Prompt(messages, options);
+
             log.info("[AI-DIAG] interview={} loop#{} prompt messages: {}", conversationId, currentLoop,
-                    prompt.getInstructions().stream()
+                    messages.stream()
                             .map(m -> {
                                 if (m instanceof AssistantMessage am && am.hasToolCalls()) {
                                     return "ASSISTANT(toolCalls=" + am.getToolCalls().stream()
@@ -324,26 +401,73 @@ public class AiChatService {
                             })
                             .toList());
 
-            // 第二次（含）以後的呼叫：帶 tool response 結果要求 model 生成文字。
-            // 部分 Preview 模型（如 gemini-3.1-flash-lite-preview）的 tool calling 支援可能不完整，
-            // 或 Spring AI M2 的 Google GenAI 適配器格式不符 API 預期，導致此步驟失敗。
-            // 發生錯誤時存入 fallback ASSISTANT 訊息，確保對話歷史保持完整
-            // （ASSISTANT(toolCalls) + TOOL_RESPONSE 後必須有 ASSISTANT，否則下次對話無法正確接續）。
+            // 呼叫 model 取得下一輪回應
+            // 發生錯誤時存入 fallback ASSISTANT，確保 ASSISTANT(toolCalls)+TOOL 後一定有 ASSISTANT
             try {
                 response = chatModel.call(prompt);
             } catch (Exception e) {
-                log.error("[AI-DIAG] interview={} tool loop call #{} failed after {} tool execution(s). Error: {}",
-                        conversationId, loopCount + 1, loopCount, e.getMessage(), e);
+                log.error("[AI-DIAG] interview={} tool loop call #{} failed. Error: {}",
+                        conversationId, currentLoop + 1, e.getMessage(), e);
                 String fallbackText = "（AI 工具分析完成，但生成回應時發生錯誤。請再試一次或換個模型。）";
-                chatMemory.add(conversationId, List.of(new AssistantMessage(fallbackText)));
+                memory.add(conversationId, List.of(new AssistantMessage(fallbackText)));
                 throw new RuntimeException("AI 回應失敗：" + e.getMessage(), e);
             }
-            AssistantMessage loopOutput = response.getResult().getOutput();
-            chatMemory.add(conversationId, List.of(loopOutput));
-            inMemoryMessages.add(loopOutput);
+
+            assistantOutput = resolveAssistantOutput(response, conversationId);
+            memory.add(conversationId, List.of(assistantOutput));
         }
 
         return response;
+    }
+
+    /**
+     * 設計說明：從 ChatResponse 中取出含 tool calls 的 AssistantMessage。
+     *
+     * 部分 AI provider（如 Anthropic/Claude）在 Spring AI 2.0.0-M2 中可能將
+     * 文字 content block 和 tool_use block 分拆為多個 Generation：
+     *   Generation[0]：純文字（response.getResult() 預設回傳此項）
+     *   Generation[1]：tool calls（response.hasToolCalls() 掃描到此項）
+     * 此方法掃描全部 results，將文字 + tool calls 合併為一個 AssistantMessage，
+     * 確保 memory 中 ASSISTANT(toolCalls) + TOOL 可以正確成對。
+     * 若無 tool calls，直接回傳第一個 Generation 的 output（純文字回應）。
+     */
+    private AssistantMessage resolveAssistantOutput(
+            org.springframework.ai.chat.model.ChatResponse response, String conversationId) {
+        List<Generation> results = response.getResults();
+
+        // 單一 Generation — 直接回傳原始 output（保留 thoughtSignatures 等 provider metadata）
+        if (results.size() == 1) {
+            return results.getFirst().getOutput();
+        }
+
+        // 多 Generation — 掃描合併（Claude 將 text + tool_use 拆成多個 Generation）
+        List<AssistantMessage.ToolCall> allToolCalls = results.stream()
+                .filter(g -> g.getOutput() != null && g.getOutput().hasToolCalls())
+                .flatMap(g -> g.getOutput().getToolCalls().stream())
+                .toList();
+
+        if (!allToolCalls.isEmpty()) {
+            String textContent = results.stream()
+                    .map(g -> g.getOutput().getText())
+                    .filter(t -> t != null && !t.isBlank())
+                    .collect(Collectors.joining("\n"));
+            // 合併 metadata（以含 tool calls 的 Generation 為主），保留 thoughtSignatures 等
+            Map<String, Object> mergedProps = new HashMap<>();
+            results.stream()
+                    .map(g -> g.getOutput().getMetadata())
+                    .forEach(mergedProps::putAll);
+            log.debug("[AI-DIAG] interview={} resolveAssistantOutput: {} result(s) → merged (text={}chars, toolCalls={})",
+                    conversationId, results.size(), textContent.length(),
+                    allToolCalls.stream().map(AssistantMessage.ToolCall::name).toList());
+            return AssistantMessage.builder()
+                    .content(textContent)
+                    .toolCalls(allToolCalls)
+                    .properties(mergedProps)
+                    .build();
+        }
+
+        // 多 Generation 但無 tool calls — 回傳第一個
+        return response.getResult().getOutput();
     }
 
     private String resolveModelId(UUID interviewId, String modelIdOverride) {

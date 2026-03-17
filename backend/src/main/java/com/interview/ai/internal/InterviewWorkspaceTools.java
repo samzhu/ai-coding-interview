@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
 // 原因：Gemini 模型會將 system prompt 中的 XML 格式誤認為可呼叫的 function call，
 // 導致 IllegalStateException: No ToolCallback found for tool name: edit_proposal。
 // 正式 @Tool 宣告讓 Spring AI 自動處理 JSON schema 與反序列化，不再依賴 regex 解析。
+// editProposal 正常返回結果（不再使用 PENDING_REVIEW sentinel），
+// 候選人的 accept/reject 透過 /chat/stream 以 action: 前綴傳入。
 
 /**
  * Spring AI @Tool 工具集，供 AI 助手在對話過程中自動呼叫（tool calling）。
@@ -164,46 +166,45 @@ public class InterviewWorkspaceTools {
     }
 
     /**
-     * 設計說明：edit_proposal 改為 @Tool 函式。
+     * 設計說明：使用 List<FileChange> record 參數，Spring AI 自動產生 JSON Schema
+     * 並反序列化模型輸出。避免 String changesJson 的雙重 JSON 編碼問題
+     * （Gemini 會在 JSON string 尾部附加多餘文字導致解析失敗）。
+     * 參考：https://docs.spring.io/spring-ai/reference/2.0/api/tools.html
      *
-     * 為何改為工具而非文字 XML 格式：
-     * 1. Gemini 模型會將 system prompt 中的 XML 格式誤認為 function call → crash
-     * 2. Spring AI tool calling 自動處理 JSON schema → 不再依賴 regex 解析
-     * 3. 工具執行時即時推送 SSE 事件 → 候選人更早看到 diff
-     * 4. 工具可驗證 original 是否匹配 → AI 可自動修正重試
-     *
-     * Human-in-the-loop 不變：工具只提交建議，不直接修改檔案。
-     * 候選人在前端審查 diff 後手動套用。
+     * 簡化設計：
+     * - 工具正常返回描述性字串，tool loop 不中斷。
+     * - AI 看到 tool result 後自然產生說明文字（解釋修改內容）。
+     * - 候選人審查 diff 後，透過前端 sendMessage("action:ACCEPTED") 或
+     *   sendMessage("action:REJECTED") 送入 /chat/stream，由 AiChatService 攔截處理。
      */
-    @Tool(description = "Propose a code edit for the candidate to review. "
-            + "The candidate will see a diff view and can accept or reject. "
-            + "IMPORTANT: Always use readFile first to get the current file content, "
-            + "then use the exact content for the 'original' parameter.")
+    @Tool(description = "Submit batch code edit proposals for candidate review. " +
+            "Gather all information using other tools FIRST, then call this ONCE. " +
+            "'original' must match the current file content exactly (use readFile to get it). " +
+            "After calling this tool, STOP using tools and explain the changes in text. " +
+            "The candidate will review the diff and send ACCEPTED or REJECTED.")
     public String editProposal(
-            @ToolParam(description = "Relative file path from workspace root, e.g. 'src/main/java/Game.java'")
-            String file,
-            @ToolParam(description = "The exact original code snippet to replace. Must match current file content exactly.")
-            String original,
-            @ToolParam(description = "The proposed replacement code")
-            String proposed,
+            @ToolParam(description = "List of file changes to propose")
+            List<FileChange> changes,
             ToolContext toolContext) {
         UUID interviewId = extractInterviewId(toolContext);
         String callId = UUID.randomUUID().toString();
-        String shortFile = file != null && file.contains("/") ? file.substring(file.lastIndexOf('/') + 1) : file;
+        emitToolEvent(toolContext, callId, "editProposal", "running", null);
 
-        emitToolEvent(toolContext, callId, "editProposal", "running", shortFile);
+        for (FileChange change : changes) {
+            emitEditProposalEvent(toolContext, change.file(), change.original(), change.proposed());
+        }
 
-        emitEditProposalEvent(toolContext, file, original, proposed);
-        emitToolEvent(toolContext, callId, "editProposal", "completed", shortFile);
+        int count = changes.size();
+        emitToolEvent(toolContext, callId, "editProposal", "completed",
+                count + " 個檔案，等待審查");
+        log.info("[AI-DIAG] interview={} editProposal submitted {} files", interviewId, count);
 
-        log.info("[AI-DIAG] interview={} tool=editProposal file={}", interviewId, file);
-        return "Edit proposal submitted for '" + file + "'. The candidate will review the diff and decide whether to apply it.";
+        return "Proposed changes to " + count + " files. Awaiting candidate review.";
     }
 
     /**
      * 發送 data-edit-proposal SSE 事件給前端。
-     * 格式與舊版 AiChatController.buildEditProposalDataEvent() 完全一致，
-     * 確保前端 AI SDK v6 UIMessageStreamParser 能正確解析。
+     * 格式與前端 AI SDK v6 UIMessageStreamParser 期望的格式一致。
      */
     private void emitEditProposalEvent(ToolContext toolContext, String file, String original, String proposed) {
         Object rawEmitter = toolContext.getContext().get("toolSseEmitter");

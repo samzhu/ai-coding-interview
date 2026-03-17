@@ -19,7 +19,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
@@ -59,13 +59,10 @@ class AiChatServiceTest {
     @Mock
     private ChatMemory chatMemory;
 
-    @Mock
-    private ToolCallingManager toolCallingManager;
-
     private AiChatService buildService() {
         return new AiChatService(repository, modelRegistry,
                 interviewModelProvider, aiPolicyProvider, interviewTimeProvider, eventPublisher,
-                workspaceTools, chatMemory, toolCallingManager);
+                workspaceTools, chatMemory);
     }
 
     /** 建立一個 no-tool-calls ChatResponse mock，回傳指定文字。
@@ -74,9 +71,14 @@ class AiChatServiceTest {
      *  metadata 透過 RETURNS_DEEP_STUBS 處理，updateLastAssistantTokenUsage 有 try-catch 兜底。
      */
     private ChatResponse mockChatResponse(String text) {
+        AssistantMessage assistantMessage = new AssistantMessage(text);
+        Generation generation = Mockito.mock(Generation.class);
+        when(generation.getOutput()).thenReturn(assistantMessage);
         ChatResponse response = Mockito.mock(ChatResponse.class, Mockito.RETURNS_DEEP_STUBS);
-        when(response.hasToolCalls()).thenReturn(false);
-        when(response.getResult().getOutput()).thenReturn(new AssistantMessage(text));
+        when(response.getResults()).thenReturn(List.of(generation));
+        // streamChat 仍使用 aiResponse.getResult().getOutput().getText()；
+        // lenient 避免在 chat 測試中觸發 UnnecessaryStubbingException
+        Mockito.lenient().when(response.getResult()).thenReturn(generation);
         return response;
     }
 

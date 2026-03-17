@@ -3,7 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import type { UIMessage } from "ai";
-import { useMemo, useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import { CheckCircle, XCircle, Loader2, FileSearch, FolderOpen, Terminal } from "lucide-react";
 import { ThinkingAnimation } from "./thinking-animation";
 import type { AiModelInfo, ChatMessage } from "@interview/shared/types";
@@ -307,6 +307,18 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
     loadHistory();
   }, [interviewId, setMessages]);
 
+  /**
+   * 處理候選人對 editProposal 的 accept/reject 決定。
+   *
+   * 設計說明：Accept/Reject 透過原本的 /chat/stream 送入，用 action: 前綴區分。
+   * 後端 AiChatService.streamChat() 偵測 action: 前綴後 strip 前綴，
+   * 以 "ACCEPTED"/"REJECTED" 當一般 user message 處理，LLM 產生 follow-up 回應。
+   * action 訊息在 messages 渲染時被過濾，不顯示在聊天紀錄中。
+   */
+  const handleEditDecision = useCallback((decision: "ACCEPTED" | "REJECTED") => {
+    sendMessage({ text: `action:${decision}` });
+  }, [sendMessage]);
+
   // 當 AI 回應完成（streaming → ready）且含有 proposals，自動 REGISTER_CHANGESET。
   // 使用 ref 追蹤已處理的 messageId，避免重複 dispatch。
   // 歷史訊息（loadHistory 載入的）只有 text parts，不含 data-edit-proposal，
@@ -356,6 +368,11 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
                 const toolInvocations =
                   message.role === "assistant" ? getToolInvocations(message) : new Map();
 
+                // action: 訊息（accept/reject）不顯示在聊天紀錄中
+                if (message.role === "user" && textContent.startsWith("action:")) {
+                  return null;
+                }
+
                 // streaming 中的空 assistant message（無文字且無 tool 事件）
                 // 由 ThinkingAnimation 取代顯示，避免空泡泡
                 if (
@@ -389,6 +406,7 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
                               interviewId={interviewId}
                               messageId={message.id}
                               proposals={proposals}
+                              onDecisionMade={handleEditDecision}
                             />
                           )}
                         </>
@@ -428,7 +446,9 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
           <div className="p-3 border-t border-[#333] shrink-0">
             <PromptInput
               onSubmit={(msg) => {
-                // 送出新訊息前，隱性拒絕當前 pending 的 ChangeSet（如有）
+                // 送出新訊息前，隱性拒絕當前 pending 的 ChangeSet（如有）。
+                // 設計說明：不通知 backend — orphan ASSISTANT(toolCalls=[editProposal])
+                // 由 CrossModelChatMemory.get() 自動 fold 為純文字，對話正常繼續。
                 if (state.pendingChangeSetId) {
                   rejectChangeSet(state.pendingChangeSetId);
                 }

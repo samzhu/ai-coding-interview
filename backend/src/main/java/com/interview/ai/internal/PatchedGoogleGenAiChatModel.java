@@ -133,7 +133,9 @@ class PatchedGoogleGenAiChatModel extends GoogleGenAiChatModel {
                         FunctionCall functionCall = part.functionCall().get();
                         String functionName = functionCall.name().orElse("");
                         String functionArguments = mapToJson(functionCall.args().orElse(Map.of()));
-                        return new AssistantMessage.ToolCall("", "function", functionName, functionArguments);
+                        // 設計說明：Gemini API 不回傳 tool call ID，但 Anthropic/OpenAI 要求 ID 符合 [a-zA-Z0-9_-]+。
+                        // 直接用 functionName 作為 ID，簡單且可辨識。
+                        return new AssistantMessage.ToolCall(functionName, "function", functionName, functionArguments);
                     })
                     .toList();
 

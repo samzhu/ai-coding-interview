@@ -10,6 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 參考資料要附上來源
 
+plan 中 畫出流程或循序圖 來確認正確性
+
+log 不足以確認根本問題時, 請嘗試多加 log, 重新測試後, 再來釐清問題, 才做修改計劃提高正確性
+
 
 ## Project Structure
 

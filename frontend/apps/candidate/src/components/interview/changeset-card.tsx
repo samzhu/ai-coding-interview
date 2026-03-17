@@ -34,9 +34,10 @@ interface ChangeSetCardProps {
   interviewId: string;
   messageId: string;
   proposals: EditProposalData[];
+  onDecisionMade?: (decision: "ACCEPTED" | "REJECTED") => void;
 }
 
-export function ChangeSetCard({ interviewId, messageId, proposals }: ChangeSetCardProps) {
+export function ChangeSetCard({ interviewId, messageId, proposals, onDecisionMade }: ChangeSetCardProps) {
   const { state, applyChangeSet, rejectChangeSet } = useInterview();
   const [isApplying, setIsApplying] = useState(false);
 
@@ -67,6 +68,10 @@ export function ChangeSetCard({ interviewId, messageId, proposals }: ChangeSetCa
           { content: proposedFullContent }
         );
       }
+
+      // 透過 sendMessage("action:ACCEPTED") 告知 AI（由 parent callback 處理）
+      onDecisionMade?.("ACCEPTED");
+
       applyChangeSet(messageId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "套用失敗，請手動修改程式碼");
@@ -76,6 +81,8 @@ export function ChangeSetCard({ interviewId, messageId, proposals }: ChangeSetCa
   }
 
   function handleReject() {
+    // 透過 sendMessage("action:REJECTED") 告知 AI（由 parent callback 處理）
+    onDecisionMade?.("REJECTED");
     rejectChangeSet(messageId);
   }
 

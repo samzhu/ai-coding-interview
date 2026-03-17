@@ -61,51 +61,15 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
     @Override
     public List<Message> findByConversationId(String conversationId) {
         UUID interviewId = UUID.fromString(conversationId);
-        List<Message> messages = repository.findByInterviewIdOrderByCreatedAtAsc(interviewId).stream()
+        // 設計說明：直接回傳 DB 原始訊息，不做任何 sanitization。
+        // sanitization（摺疊 tool call 配對）已移至 AiChatService.callWithToolLoop()，
+        // 在建構 Prompt 前執行。這樣做的根本原因：
+        // MessageWindowChatMemory.add() 會先呼叫 findByConversationId() 取得現有訊息數，
+        // 若此處回傳 sanitized（已壓縮）訊息，數量會小於 DB 實際數，
+        // 導致 saveAll() 誤刪 DB 最舊記錄（SYSTEM + USER），破壞對話歷史完整性。
+        return repository.findByInterviewIdOrderByCreatedAtAsc(interviewId).stream()
                 .map(this::toSpringAiMessage)
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-        return sanitizeToolCallPairs(messages);
-    }
-
-    /**
-     * 防禦性清理：移除不完整的 tool call 配對，避免 OpenAI/Anthropic 因訊息序列錯誤回 400。
-     *
-     * MessageWindowChatMemory 視窗截斷可能拆開 ASSISTANT(tool_calls)+TOOL 配對：
-     * - ASSISTANT 有 toolCalls 但下一條不是 ToolResponseMessage → 降級為純文字訊息
-     * - 孤立的 ToolResponseMessage（前一條不是 ASSISTANT with toolCalls）→ 移除
-     *
-     * 這是防禦性兜底，根本原因是 advisor 設定（Fix 1）與 maxTokens（Fix 2）。
-     */
-    private List<Message> sanitizeToolCallPairs(List<Message> messages) {
-        List<Message> result = new ArrayList<>();
-        for (int i = 0; i < messages.size(); i++) {
-            Message msg = messages.get(i);
-            if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
-                boolean nextIsToolResponse = (i + 1 < messages.size())
-                        && messages.get(i + 1) instanceof ToolResponseMessage;
-                if (!nextIsToolResponse) {
-                    // 孤立的 tool_calls AssistantMessage：降級為純文字，避免 API 400
-                    log.debug("Sanitized orphaned AssistantMessage with toolCalls at index {} (expected during tool loop)", i);
-                    result.add(new AssistantMessage(am.getText() != null ? am.getText() : ""));
-                } else {
-                    result.add(msg);
-                }
-            } else if (msg instanceof ToolResponseMessage) {
-                // 檢查前一條是否為帶 toolCalls 的 AssistantMessage
-                boolean prevIsToolCallsAssistant = !result.isEmpty()
-                        && result.getLast() instanceof AssistantMessage prev
-                        && prev.hasToolCalls();
-                if (!prevIsToolCallsAssistant) {
-                    log.debug("Sanitized orphaned ToolResponseMessage at index {} (expected during tool loop)", i);
-                    // 移除：不加入 result
-                } else {
-                    result.add(msg);
-                }
-            } else {
-                result.add(msg);
-            }
-        }
-        return result;
     }
 
     @Override
@@ -140,7 +104,7 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
         return switch (msg.getMessageType()) {
             case SYSTEM -> new SystemMessage(msg.getContent() != null ? msg.getContent() : "");
             case USER -> new UserMessage(msg.getContent() != null ? msg.getContent() : "");
-            case ASSISTANT -> deserializeAssistantMessage(msg.getContent());
+            case ASSISTANT -> deserializeAssistantMessage(msg.getContent(), msg.getModel());
             case TOOL -> deserializeToolResponseMessage(msg.getContent());
         };
     }
@@ -164,6 +128,9 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
         } else if (message instanceof ToolResponseMessage trm) {
             // 設計說明：ToolResponseMessage 包含一或多個工具回應（tool name + response data）。
             // 官方 JdbcChatMemoryRepository 存空內容，我們完整序列化以保留工具執行結果。
+            // 同時從 metadata 取 model（由 CrossModelChatMemory.tagToolResponseMessage 注入）。
+            Object modelMeta = trm.getMetadata().get("model");
+            if (modelMeta instanceof String s) model = s;
             content = serializeToolResponses(trm);
         } else {
             content = message.getText();
@@ -224,6 +191,13 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
             Map<String, Object> payload = new HashMap<>();
             payload.put("_type", "tool_responses");
             payload.put("responses", responseMaps);
+            // 設計說明：持久化 model metadata（由 CrossModelChatMemory.tagToolResponseMessage 注入），
+            // 讓 DB 記錄此 TOOL response 對應的 model，即使 MessageWindow 截斷 ASSISTANT(toolCalls)，
+            // TOOL response 仍帶有完整上下文，便於跨模型切換場景的診斷。
+            Object modelMeta = trm.getMetadata().get("model");
+            if (modelMeta instanceof String s) {
+                payload.put("model", s);
+            }
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
             log.warn("Failed to serialize ToolResponseMessage", e);
@@ -232,13 +206,19 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
     }
 
     @SuppressWarnings("unchecked")
-    private Message deserializeAssistantMessage(String content) {
+    private Message deserializeAssistantMessage(String content, String model) {
         if (content == null || content.isBlank()) {
-            return new AssistantMessage("");
+            return AssistantMessage.builder()
+                    .content("")
+                    .properties(Map.of("model", model != null ? model : ""))
+                    .build();
         }
         if (!content.startsWith("{")) {
-            // 舊格式純文字，直接回傳
-            return new AssistantMessage(content);
+            // 舊格式純文字，直接回傳（附 model metadata 供 CrossModelChatMemory 判斷來源 provider）
+            return AssistantMessage.builder()
+                    .content(content)
+                    .properties(Map.of("model", model != null ? model : ""))
+                    .build();
         }
         try {
             Map<String, Object> payload = objectMapper.readValue(content, Map.class);
@@ -246,12 +226,15 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
                 String text = (String) payload.getOrDefault("text", "");
                 List<Map<String, String>> tcMaps = (List<Map<String, String>>) payload.getOrDefault("toolCalls", List.of());
                 List<AssistantMessage.ToolCall> toolCalls = tcMaps.stream()
-                        .map(tc -> new AssistantMessage.ToolCall(
-                                tc.get("id"), tc.get("type"), tc.get("name"), tc.get("arguments")))
+                        .map(tc -> new AssistantMessage.ToolCall(tc.get("id"), tc.get("type"), tc.get("name"), tc.get("arguments")))
                         .toList();
                 // 還原 thoughtSignatures 到 AssistantMessage metadata，
                 // 讓 GoogleGenAiChatModel.messageToGeminiParts() 能重新附加到 functionCall parts。
+                // 同時注入 model 供 CrossModelChatMemory 判斷來源 provider。
                 Map<String, Object> properties = new HashMap<>();
+                if (model != null) {
+                    properties.put("model", model);
+                }
                 Object sigsObj = payload.get("thoughtSignatures");
                 if (sigsObj instanceof List<?> sigList && !sigList.isEmpty()) {
                     List<byte[]> signatures = sigList.stream()
@@ -271,7 +254,10 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
         } catch (Exception e) {
             log.warn("Failed to deserialize AssistantMessage JSON, treating as plain text", e);
         }
-        return new AssistantMessage(content);
+        return AssistantMessage.builder()
+                .content(content)
+                .properties(Map.of("model", model != null ? model : ""))
+                .build();
     }
 
     @SuppressWarnings("unchecked")
@@ -284,10 +270,18 @@ class ConversationChatMemoryRepository implements ChatMemoryRepository {
             if ("tool_responses".equals(payload.get("_type"))) {
                 List<Map<String, String>> rMaps = (List<Map<String, String>>) payload.getOrDefault("responses", List.of());
                 List<ToolResponseMessage.ToolResponse> responses = rMaps.stream()
-                        .map(r -> new ToolResponseMessage.ToolResponse(
-                                r.get("id"), r.get("name"), r.get("responseData")))
+                        .map(r -> new ToolResponseMessage.ToolResponse(r.get("id"), r.get("name"), r.get("responseData")))
                         .toList();
-                return ToolResponseMessage.builder().responses(responses).build();
+                // 還原 model metadata，供 toConversationMessage() 持久化時取用
+                Map<String, Object> metadata = new HashMap<>();
+                Object model = payload.get("model");
+                if (model instanceof String s) {
+                    metadata.put("model", s);
+                }
+                return ToolResponseMessage.builder()
+                        .responses(responses)
+                        .metadata(metadata)
+                        .build();
             }
         } catch (Exception e) {
             log.warn("Failed to deserialize ToolResponseMessage JSON", e);
