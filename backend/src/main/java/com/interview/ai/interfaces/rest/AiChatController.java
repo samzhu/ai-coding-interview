@@ -164,6 +164,13 @@ class AiChatController {
                     sseWriter.writeEvent(deltaJson);
                 }
 
+            } catch (InterruptedException e) {
+                // 設計說明：Client 斷線（proxy timeout 或瀏覽器關閉）時，
+                // Tomcat 會中斷 StreamingResponseBody 執行緒。
+                // 此為預期行為，非錯誤，僅記錄 WARN。
+                Thread.currentThread().interrupt(); // 恢復中斷旗標
+                log.warn("[AI-DIAG] interview={} client disconnected during SSE stream", interviewId);
+                return;
             } catch (Exception e) {
                 // 業務例外（AI 停用、面試超時等）送錯誤文字避免 network error
                 if (e instanceof com.interview.ai.application.AiDisabledException

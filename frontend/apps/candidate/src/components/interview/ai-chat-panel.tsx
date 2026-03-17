@@ -51,6 +51,8 @@ function getTextContent(message: UIMessage): string {
 // AI SDK v6 要求 data 事件 type 以 "data-" 開頭，
 // 後端送出 {"type":"data-edit-proposal",...}，
 // SDK 會在 message.parts 加入 { type: "data-edit-proposal", id, data: {...} }。
+// 設計說明：data 中包含 proposalId（= ToolCall.id），前端存入 EditProposalData，
+// 供同意/拒絕時精確傳回後端定位 tool call arguments。
 function getEditProposals(message: UIMessage): EditProposalData[] {
   return message.parts
     .filter(
@@ -101,9 +103,10 @@ function getToolInvocations(message: UIMessage): Map<string, ToolInvocationData>
 
 /** Tool 名稱對應中文顯示名與圖示 */
 const TOOL_META: Record<string, { label: string; Icon: React.ComponentType<{ className?: string }> }> = {
-  listFiles: { label: "列出工作區檔案", Icon: FolderOpen },
-  readFile:  { label: "讀取檔案", Icon: FileSearch },
-  runCommand:{ label: "執行指令", Icon: Terminal },
+  listFiles:    { label: "列出工作區檔案", Icon: FolderOpen },
+  readFile:     { label: "讀取檔案", Icon: FileSearch },
+  runCommand:   { label: "執行指令", Icon: Terminal },
+  editProposal: { label: "提交修改建議", Icon: FileSearch },
 };
 
 /**
@@ -234,6 +237,7 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
       // 以便重建 data-tool-invocation parts，讓 ToolInvocationBadge 正確渲染。
       function parseToolCallContent(content: string): { toolName: string; summary?: string } {
         if (content === "列出工作區檔案") return { toolName: "listFiles" };
+        if (content === "提交修改建議") return { toolName: "editProposal", summary: content };
         const readMatch = content.match(/^讀取檔案\s+(.+)/);
         if (readMatch) return { toolName: "readFile", summary: readMatch[1].split("\n")[0] };
         // runCommand 指令可能含換行（如 heredoc），僅取第一行作為 summary 顯示
@@ -310,13 +314,14 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
   /**
    * 處理候選人對 editProposal 的 accept/reject 決定。
    *
-   * 設計說明：Accept/Reject 透過原本的 /chat/stream 送入，用 action: 前綴區分。
-   * 後端 AiChatService.streamChat() 偵測 action: 前綴後 strip 前綴，
-   * 以 "ACCEPTED"/"REJECTED" 當一般 user message 處理，LLM 產生 follow-up 回應。
+   * 設計說明：格式改為 "action:ACCEPTED:<proposalId>" / "action:REJECTED:<proposalId>"。
+   * 後端 AiChatService.streamChat() 偵測後不呼叫 LLM，直接寫入固定回應到 memory，
+   * ACCEPTED 時後端同時呼叫 fileProvider.writeFile() 寫回後端檔案。
+   * proposalId = ToolCall.id，供後端精確定位 editProposal tool call arguments。
    * action 訊息在 messages 渲染時被過濾，不顯示在聊天紀錄中。
    */
-  const handleEditDecision = useCallback((decision: "ACCEPTED" | "REJECTED") => {
-    sendMessage({ text: `action:${decision}` });
+  const handleEditDecision = useCallback((decision: "ACCEPTED" | "REJECTED", proposalId?: string) => {
+    sendMessage({ text: `action:${decision}:${proposalId ?? "unknown"}` });
   }, [sendMessage]);
 
   // 當 AI 回應完成（streaming → ready）且含有 proposals，自動 REGISTER_CHANGESET。
@@ -406,6 +411,7 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
                               interviewId={interviewId}
                               messageId={message.id}
                               proposals={proposals}
+                              proposalId={proposals[0]?.proposalId}
                               onDecisionMade={handleEditDecision}
                             />
                           )}

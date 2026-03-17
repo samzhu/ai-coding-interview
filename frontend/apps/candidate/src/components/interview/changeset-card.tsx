@@ -2,8 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { CheckCircle, XCircle, FileCode } from "lucide-react";
-import { toast } from "sonner";
-import { apiPut } from "@interview/shared/lib/api-client";
 import { useInterview } from "@/contexts/interview-context";
 import { groupProposalsByFile, type EditProposalData } from "@/lib/changeset";
 
@@ -20,24 +18,26 @@ import { groupProposalsByFile, type EditProposalData } from "@/lib/changeset";
  * - rejected：顯示灰色 badge「已拒絕」，摺疊、半透明
  *
  * 同意流程：
- * 1. 從 state.diffReview.fileDiffs 讀取 proposedFullContent（REGISTER_CHANGESET 時已計算）
- * 2. apiPut 寫回後端（每個異動檔案各一次）
- * 3. setFileContent 更新本地 state（確保 code 與 files map 一致）
- * 4. dispatch APPLY_CHANGESET 標記完成並清除 diff 模式
+ * 1. 呼叫 onDecisionMade("ACCEPTED", proposalId) → 前端送出 action:ACCEPTED:<proposalId>
+ * 2. 後端 handleAccepted() 從 memory 找到 tool call arguments，直接 writeFile 寫回後端
+ * 3. dispatch APPLY_CHANGESET — reducer 負責將 proposedFullContent 更新到 state.files
+ *    （前端本地狀態同步，讓 CodeMirror 顯示新內容）
  *
  * 拒絕流程：
- * dispatch REJECT_CHANGESET → reducer 從 fileDiffs.originalFullContent 還原檔案
- * 後端無需操作（proposed 內容從未寫入後端，REGISTER_CHANGESET 只改 state）
+ * 呼叫 onDecisionMade("REJECTED", proposalId) → 後端記錄拒絕。
+ * dispatch REJECT_CHANGESET → reducer 從 fileDiffs.originalFullContent 還原檔案。
  */
 
 interface ChangeSetCardProps {
   interviewId: string;
   messageId: string;
   proposals: EditProposalData[];
-  onDecisionMade?: (decision: "ACCEPTED" | "REJECTED") => void;
+  /** proposalId = ToolCall.id，同意/拒絕時回傳給後端精確定位 editProposal tool call */
+  proposalId?: string;
+  onDecisionMade?: (decision: "ACCEPTED" | "REJECTED", proposalId?: string) => void;
 }
 
-export function ChangeSetCard({ interviewId, messageId, proposals, onDecisionMade }: ChangeSetCardProps) {
+export function ChangeSetCard({ interviewId, messageId, proposals, proposalId, onDecisionMade }: ChangeSetCardProps) {
   const { state, applyChangeSet, rejectChangeSet } = useInterview();
   const [isApplying, setIsApplying] = useState(false);
 
@@ -52,37 +52,21 @@ export function ChangeSetCard({ interviewId, messageId, proposals, onDecisionMad
   );
 
   async function handleApply() {
-    // 讀取 diffReview 確認 diff 模式已就緒（REGISTER_CHANGESET 已執行）
-    const diffReview = state.diffReview;
-    if (!diffReview || diffReview.changeSetMessageId !== messageId) {
-      toast.error("無法套用：diff 模式尚未就緒，請稍後再試");
-      return;
-    }
     setIsApplying(true);
     try {
-      // 先 apiPut 寫回後端（每個異動檔案各一次）
-      // 接著 dispatch APPLY_CHANGESET：reducer 負責將 proposedFullContent 寫入 state.files
-      for (const [filePath, { proposedFullContent }] of diffReview.fileDiffs) {
-        await apiPut<void>(
-          `/interviews/${interviewId}/files/content?path=${encodeURIComponent(filePath)}`,
-          { content: proposedFullContent }
-        );
-      }
-
-      // 透過 sendMessage("action:ACCEPTED") 告知 AI（由 parent callback 處理）
-      onDecisionMade?.("ACCEPTED");
-
+      // 設計說明：前端不再直接 apiPut 寫檔。
+      // 改由後端 handleAccepted() 收到 action:ACCEPTED:<proposalId> 後，
+      // 從 chatMemory 找到 tool call arguments 並呼叫 fileProvider.writeFile()。
+      // 前端 dispatch APPLY_CHANGESET 負責同步本地 state.files（更新 CodeMirror 顯示）。
+      onDecisionMade?.("ACCEPTED", proposalId);
       applyChangeSet(messageId);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "套用失敗，請手動修改程式碼");
     } finally {
       setIsApplying(false);
     }
   }
 
   function handleReject() {
-    // 透過 sendMessage("action:REJECTED") 告知 AI（由 parent callback 處理）
-    onDecisionMade?.("REJECTED");
+    onDecisionMade?.("REJECTED", proposalId);
     rejectChangeSet(messageId);
   }
 

@@ -80,6 +80,7 @@ public record ConversationHistoryResponse(List<ChatResponse> messages) {
                         : "";
                 yield "執行指令 " + display;
             }
+            case "editProposal" -> "提交修改建議";
             default -> name;
         };
     }

@@ -41,6 +41,9 @@ dependencies {
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // OpenTelemetry — 自動 traceId/spanId MDC 注入，log 可追蹤 request
+    implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+
     // Spring Modulith
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     implementation("org.springframework.modulith:spring-modulith-starter-jdbc")

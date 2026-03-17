@@ -28,8 +28,10 @@ import java.util.stream.Collectors;
 // 原因：Gemini 模型會將 system prompt 中的 XML 格式誤認為可呼叫的 function call，
 // 導致 IllegalStateException: No ToolCallback found for tool name: edit_proposal。
 // 正式 @Tool 宣告讓 Spring AI 自動處理 JSON schema 與反序列化，不再依賴 regex 解析。
-// editProposal 正常返回結果（不再使用 PENDING_REVIEW sentinel），
-// 候選人的 accept/reject 透過 /chat/stream 以 action: 前綴傳入。
+// editProposal 回傳 "PENDING_REVIEW" 列舉狀態（proposalId 已由 ToolCall.id 攜帶在 memory 中），
+// callLLMAndLoop() 偵測 editProposal → break loop，等待候選人回應。
+// 候選人的 accept/reject 透過 /chat/stream 以 action:ACCEPTED:<proposalId> / action:REJECTED:<proposalId> 傳入，
+// 由 AiChatService.handleAccepted/handleRejected 直接處理（不呼叫 LLM）。
 
 /**
  * Spring AI @Tool 工具集，供 AI 助手在對話過程中自動呼叫（tool calling）。
@@ -171,42 +173,56 @@ public class InterviewWorkspaceTools {
      * （Gemini 會在 JSON string 尾部附加多餘文字導致解析失敗）。
      * 參考：https://docs.spring.io/spring-ai/reference/2.0/api/tools.html
      *
-     * 簡化設計：
-     * - 工具正常返回描述性字串，tool loop 不中斷。
-     * - AI 看到 tool result 後自然產生說明文字（解釋修改內容）。
-     * - 候選人審查 diff 後，透過前端 sendMessage("action:ACCEPTED") 或
-     *   sendMessage("action:REJECTED") 送入 /chat/stream，由 AiChatService 攔截處理。
+     * 新設計：
+     * - 工具回傳 "PENDING_REVIEW"，callLLMAndLoop() 偵測到此結果後 break loop。
+     * - break 後回傳固定文字「已提交修改建議」給候選人，不再呼叫 LLM 產生說明文字。
+     * - proposalId 為 ToolCall.id（AI 模型產生），已存入 memory 的 ASSISTANT toolCalls。
+     * - 候選人審查 diff 後，透過前端 sendMessage("action:ACCEPTED:<proposalId>") 或
+     *   sendMessage("action:REJECTED:<proposalId>") 送入 /chat/stream，
+     *   由 AiChatService.handleAccepted/handleRejected 直接處理（不呼叫 LLM）。
      */
     @Tool(description = "Submit batch code edit proposals for candidate review. " +
             "Gather all information using other tools FIRST, then call this ONCE. " +
             "'original' must match the current file content exactly (use readFile to get it). " +
-            "After calling this tool, STOP using tools and explain the changes in text. " +
+            "After submitting proposals, explain the changes to the candidate in text. " +
             "The candidate will review the diff and send ACCEPTED or REJECTED.")
     public String editProposal(
             @ToolParam(description = "List of file changes to propose")
             List<FileChange> changes,
             ToolContext toolContext) {
         UUID interviewId = extractInterviewId(toolContext);
-        String callId = UUID.randomUUID().toString();
-        emitToolEvent(toolContext, callId, "editProposal", "running", null);
 
+        // 設計說明：proposalId = ToolCall.id（AI 模型產生，已存在 memory ASSISTANT toolCalls 中）。
+        // callLLMAndLoop() 在 cb.call() 前注入到 ToolContext 共享 HashMap。
+        // handleAccepted() 收到此 ID 後，掃描 memory 中 ASSISTANT toolCalls 比對 tc.id() 即可找到 arguments。
+        String proposalId = (String) toolContext.getContext().getOrDefault("currentToolCallId", "unknown");
+
+        // 設計說明：editProposal 不發送 data-tool-invocation 事件。
+        // ChangeSetCard 已透過 data-edit-proposal SSE 事件完整呈現修改內容，
+        // 額外的 tool badge 只會讓前端顯示 "unknown editProposal"（多餘且令人困惑）。
         for (FileChange change : changes) {
-            emitEditProposalEvent(toolContext, change.file(), change.original(), change.proposed());
+            emitEditProposalEvent(toolContext, proposalId, change.file(), change.original(), change.proposed());
         }
 
-        int count = changes.size();
-        emitToolEvent(toolContext, callId, "editProposal", "completed",
-                count + " 個檔案，等待審查");
-        log.info("[AI-DIAG] interview={} editProposal submitted {} files", interviewId, count);
+        log.info("[AI-DIAG] interview={} editProposal submitted {} files, proposalId={}",
+                interviewId, changes.size(), proposalId);
 
-        return "Proposed changes to " + count + " files. Awaiting candidate review.";
+        // 設計說明：回傳列舉狀態即可。proposalId 不需放在回傳值中——
+        // 它已透過 ToolCall.id 存在 memory 的 ASSISTANT 訊息 toolCalls[] 裡，
+        // handleAccepted() 用 proposalId 掃描 memory 即可精確定位。
+        // 後端 callLLMAndLoop() 偵測 editProposal → break，候選人按同意/拒絕由 handleAccepted/handleRejected 處理。
+        return "PENDING_REVIEW";
     }
 
     /**
      * 發送 data-edit-proposal SSE 事件給前端。
      * 格式與前端 AI SDK v6 UIMessageStreamParser 期望的格式一致。
+     *
+     * 設計說明：proposalId = ToolCall.id，由 callLLMAndLoop() 注入到 ToolContext，
+     * 前端收到後存入 EditProposalData，供 Accept/Reject 時精確傳回後端定位 tool call arguments。
      */
-    private void emitEditProposalEvent(ToolContext toolContext, String file, String original, String proposed) {
+    private void emitEditProposalEvent(ToolContext toolContext, String proposalId,
+                                       String file, String original, String proposed) {
         Object rawEmitter = toolContext.getContext().get("toolSseEmitter");
         if (rawEmitter instanceof Consumer) {
             @SuppressWarnings("unchecked")
@@ -214,6 +230,7 @@ public class InterviewWorkspaceTools {
             try {
                 Map<String, Object> data = new LinkedHashMap<>();
                 data.put("type", "edit-proposal");
+                data.put("proposalId", proposalId != null ? proposalId : "unknown");
                 data.put("filePath", file != null ? file : "");
                 data.put("original", original != null ? original : "");
                 data.put("proposed", proposed != null ? proposed : "");

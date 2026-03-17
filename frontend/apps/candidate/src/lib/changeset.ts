@@ -11,6 +11,8 @@ import { computeChangeStats } from "./diff-utils";
 
 export interface EditProposalData {
   type: "edit-proposal";
+  /** ToolCall.id — AI 模型產生的唯一 ID，供 Accept/Reject 時精確回傳後端定位 tool call arguments */
+  proposalId?: string;
   filePath: string;
   original: string;
   proposed: string;

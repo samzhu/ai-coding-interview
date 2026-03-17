@@ -8,6 +8,7 @@ import com.interview.ai.internal.CrossModelChatMemory;
 import com.interview.ai.internal.InterviewWorkspaceTools;
 import com.interview.interview.InterviewAiPolicyProvider;
 import com.interview.interview.InterviewExpiredException;
+import com.interview.interview.InterviewFileProvider;
 import com.interview.interview.InterviewModelProvider;
 import com.interview.interview.InterviewTimeProvider;
 import org.slf4j.Logger;
@@ -29,7 +30,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
 import java.util.ArrayList;
@@ -58,10 +62,10 @@ import java.util.stream.Collectors;
  * ToolResponseMessage 及最終 ASSISTANT 回應全部持久化到 DB。
  *
  * action: 前綴設計：
- * 候選人 accept/reject editProposal 時，前端呼叫 sendMessage("action:ACCEPTED") 或
- * sendMessage("action:REJECTED")，透過原本的 /chat/stream 端點傳入。
- * streamChat() 偵測 action: 前綴後 strip 前綴，以純 "ACCEPTED"/"REJECTED" 當一般
- * user message 處理，不發布 USER 事件（action 不是真正的使用者訊息）。
+ * 候選人 accept/reject editProposal 時，前端呼叫 sendMessage("action:ACCEPTED:<proposalId>") 或
+ * sendMessage("action:REJECTED:<proposalId>")，透過原本的 /chat/stream 端點傳入。
+ * streamChat() 偵測 action: 前綴後，ACCEPTED/REJECTED 不呼叫 LLM，
+ * 直接寫入固定回應到 memory，節省 5-30 秒等待時間和 token。
  */
 @Service
 public class AiChatService {
@@ -78,6 +82,9 @@ public class AiChatService {
     // AI 工具集（listFiles、readFile、runCommand、editProposal），透過 tool calling 讓 AI 自動呼叫
     private final InterviewWorkspaceTools workspaceTools;
     private final ChatMemory chatMemory;
+    // 用於 handleAccepted()：寫回後端檔案 + 解析 tool call arguments JSON
+    private final InterviewFileProvider fileProvider;
+    private final ObjectMapper objectMapper;
 
     public AiChatService(ConversationMessageRepository repository,
                          AiModelRegistry modelRegistry,
@@ -86,7 +93,9 @@ public class AiChatService {
                          InterviewTimeProvider interviewTimeProvider,
                          ApplicationEventPublisher eventPublisher,
                          InterviewWorkspaceTools workspaceTools,
-                         ChatMemory chatMemory) {
+                         ChatMemory chatMemory,
+                         InterviewFileProvider fileProvider,
+                         ObjectMapper objectMapper) {
         this.repository = repository;
         this.modelRegistry = modelRegistry;
         this.interviewModelProvider = interviewModelProvider;
@@ -95,6 +104,8 @@ public class AiChatService {
         this.eventPublisher = eventPublisher;
         this.workspaceTools = workspaceTools;
         this.chatMemory = chatMemory;
+        this.fileProvider = fileProvider;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -122,7 +133,7 @@ public class AiChatService {
         Map<String, Object> toolContextMap = Map.of("interviewId", interviewId.toString());
         org.springframework.ai.chat.model.ChatResponse aiResponse =
                 callWithToolLoop(chatModelOpt.get(), conversationId, userMessage, toolContextMap,
-                        resolveModelId(interviewId, null));
+                        resolveModelId(interviewId, null), false);
 
         String response = aiResponse.getResult().getOutput().getText();
         updateLastAssistantTokenUsage(interviewId, aiResponse);
@@ -157,14 +168,26 @@ public class AiChatService {
         String resolvedModelId = resolveModelId(interviewId, modelIdOverride);
         Optional<ChatModel> chatModelOpt = resolveChatModel(resolvedModelId);
 
-        // 設計說明：Accept/Reject 透過原本的 /chat/stream 送入，用 action: 前綴區分。
-        // Strip 前綴後當一般 user message 處理（LLM 的 system prompt 已告知會收到 ACCEPTED/REJECTED）。
-        // 不發布 AiChatMessageEvent USER 事件（action 不是真正的使用者訊息，前端也不渲染）。
-        final String effectiveUserMessage;
+        // 設計說明：action: 前綴用於候選人 accept/reject editProposal。
+        // 新格式 "action:ACCEPTED:<proposalId>" / "action:REJECTED:<proposalId>"。
+        // action 不是真正的使用者訊息，不發布 USER 事件。
         final boolean isAction = userMessage.startsWith("action:");
+        final String effectiveUserMessage;
         if (isAction) {
-            effectiveUserMessage = userMessage.substring("action:".length()); // "ACCEPTED" or "REJECTED"
-            log.info("[AI-DIAG] interview={} action message detected: {}", interviewId, effectiveUserMessage);
+            effectiveUserMessage = userMessage.substring("action:".length()); // "ACCEPTED:<id>" or "REJECTED:<id>"
+            log.info("[AI] interview={} action detected: {}", interviewId, effectiveUserMessage);
+
+            // 設計說明：ACCEPTED/REJECTED action 不需呼叫 LLM。
+            // 後端直接寫入固定回應到 memory，節省 5-30 秒等待時間和 token 費用。
+            if (effectiveUserMessage.startsWith("ACCEPTED:")) {
+                String proposalId = effectiveUserMessage.substring("ACCEPTED:".length());
+                return handleAccepted(interviewId, conversationId, proposalId, assistantMsgId);
+            } else if (effectiveUserMessage.startsWith("REJECTED:")) {
+                String proposalId = effectiveUserMessage.substring("REJECTED:".length());
+                return handleRejected(interviewId, conversationId, proposalId, assistantMsgId);
+            }
+            // 未知 action 格式 — 以 effectiveUserMessage（無 action: 前綴）繼續 LLM 處理
+            log.warn("[AI] interview={} unknown action format, falling through to LLM: {}", interviewId, effectiveUserMessage);
         } else {
             effectiveUserMessage = userMessage;
             // 發布 USER 訊息事件（DB 寫入由 callWithToolLoop 內的 chatMemory.add() 完成）
@@ -203,39 +226,40 @@ public class AiChatService {
         // Controller 的 latch.await(5min) 作為最終兜底安全閥。
         StringBuilder fullResponse = new StringBuilder();
         final ChatModel chatModel = chatModelOpt.get();
+        final boolean isActionFallback = isAction; // 傳入 callWithToolLoop 停用工具（未知 action 格式 fallback）
 
         Flux<String> stream = Flux.defer(() -> {
                     long t0 = System.currentTimeMillis();
-                    log.info("[AI-DIAG] interview={} .call() starting (model={}, isAction={})",
-                            interviewId, resolvedModelId, isAction);
+                    log.info("[AI] interview={} .call() starting (model={}, isAction={})",
+                            interviewId, resolvedModelId, isActionFallback);
 
                     org.springframework.ai.chat.model.ChatResponse aiResponse =
                             callWithToolLoop(chatModel, conversationId, effectiveUserMessage, toolContextMap,
-                                    resolvedModelId);
+                                    resolvedModelId, isActionFallback);
 
                     String fullContent = aiResponse.getResult().getOutput().getText();
 
                     long elapsed = System.currentTimeMillis() - t0;
-                    log.info("[AI-DIAG] interview={} .call() completed in {}ms, content={}",
+                    log.info("[AI] interview={} .call() completed in {}ms, content={}",
                             interviewId, elapsed,
                             fullContent == null ? "null" : "length=" + fullContent.length());
 
                     updateLastAssistantTokenUsage(interviewId, aiResponse);
 
                     if (fullContent == null || fullContent.isBlank()) {
-                        log.warn("[AI-DIAG] interview={} empty content after tool calling", interviewId);
+                        log.warn("[AI] interview={} empty content after tool calling", interviewId);
                         fullContent = "（AI 已完成工具分析，但未產生文字回覆。請再試一次或換個方式提問。）";
                     }
 
                     List<String> chunks = splitIntoChunks(fullContent, 20);
-                    log.debug("[AI-DIAG] interview={} split into {} chunks", interviewId, chunks.size());
+                    log.debug("[AI] interview={} split into {} chunks", interviewId, chunks.size());
                     return Flux.fromIterable(chunks);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnNext(fullResponse::append)
                 .doOnComplete(() -> {
                     try {
-                        log.info("[AI-DIAG] interview={} assistant sent, length={}", interviewId, fullResponse.length());
+                        log.info("[AI] interview={} assistant sent, length={}", interviewId, fullResponse.length());
                         eventPublisher.publishEvent(new AiChatMessageEvent(
                                 interviewId, MessageType.ASSISTANT, fullResponse.toString()));
                     } catch (Exception e) {
@@ -247,10 +271,137 @@ public class AiChatService {
         return new StreamingChatResult(stream, assistantMsgId);
     }
 
+    /**
+     * 設計說明：候選人按同意後，不呼叫 LLM，直接：
+     * 1. 寫入 UserMessage("ACCEPTED") 到 chatMemory（完整對話紀錄）
+     * 2. 掃描 chatMemory 歷史，找到 proposalId 對應的 editProposal toolCall
+     * 3. 解析 FileChange 並逐一呼叫 fileProvider.writeFile() 寫回後端
+     * 4. 寫入固定 AssistantMessage 到 chatMemory
+     * 5. 發布 ASSISTANT 事件，回傳固定文字串流
+     *
+     * proposalId 比對策略：
+     * - 精確比對 tc.id() == proposalId（Claude/OpenAI 有唯一 ID）
+     * - 退而求次：找最後一個 name == "editProposal" 的 toolCall（Gemini name-based 配對）
+     */
+    private StreamingChatResult handleAccepted(UUID interviewId, String conversationId,
+                                               String proposalId, UUID assistantMsgId) {
+        StringBuilder fullResponse = new StringBuilder();
+        Flux<String> stream = Flux.defer(() -> {
+            // 設計說明：直接使用底層 chatMemory（非 CrossModelChatMemory），
+            // 純文字 USER/ASSISTANT 訊息不需 provider 格式轉換。
+            chatMemory.add(conversationId, List.of(new UserMessage("ACCEPTED")));
+
+            // 掃描 memory 找 proposalId 對應的 editProposal tool call arguments
+            List<Message> history = chatMemory.get(conversationId);
+            String tcArgs = null;
+            String fallbackArgs = null;
+            outer:
+            for (int i = history.size() - 1; i >= 0; i--) {
+                Message msg = history.get(i);
+                if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
+                    for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
+                        if ("editProposal".equals(tc.name())) {
+                            if (proposalId.equals(tc.id())) {
+                                tcArgs = tc.arguments();
+                                break outer;
+                            }
+                            // 保留最後一個 editProposal 作為 fallback（Gemini name-based 配對）
+                            if (fallbackArgs == null) {
+                                fallbackArgs = tc.arguments();
+                            }
+                        }
+                    }
+                }
+            }
+            if (tcArgs == null) {
+                tcArgs = fallbackArgs;
+                log.warn("[AI] interview={} handleAccepted: proposalId={} not matched by id, using fallback",
+                        interviewId, proposalId);
+            }
+
+            // 解析 FileChange 並寫檔
+            int filesWritten = 0;
+            if (tcArgs != null) {
+                try {
+                    JsonNode root = objectMapper.readTree(tcArgs);
+                    JsonNode changesNode = root.get("changes");
+                    if (changesNode != null && changesNode.isArray()) {
+                        for (JsonNode changeNode : changesNode) {
+                            String filePath = changeNode.get("file").asText();
+                            String proposed = changeNode.get("proposed").asText();
+                            fileProvider.writeFile(interviewId, filePath, proposed);
+                            filesWritten++;
+                            log.info("[AI] interview={} handleAccepted: wrote file={}", interviewId, filePath);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("[AI] interview={} handleAccepted: failed to parse/write files, proposalId={}",
+                            interviewId, proposalId, e);
+                }
+            } else {
+                log.warn("[AI] interview={} handleAccepted: no editProposal toolCall found in history, proposalId={}",
+                        interviewId, proposalId);
+            }
+
+            String responseText = "已套用 " + filesWritten + " 個檔案修改。";
+            chatMemory.add(conversationId, List.of(new AssistantMessage(responseText)));
+            return Flux.just(responseText);
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .doOnNext(fullResponse::append)
+        .doOnComplete(() -> {
+            try {
+                eventPublisher.publishEvent(new AiChatMessageEvent(
+                        interviewId, MessageType.ASSISTANT, fullResponse.toString()));
+            } catch (Exception e) {
+                log.error("Failed to publish assistant message event for handleAccepted interview {}", interviewId, e);
+            }
+        })
+        .doOnError(e -> log.error("handleAccepted failed for interview={} proposalId={}", interviewId, proposalId, e));
+
+        return new StreamingChatResult(stream, assistantMsgId);
+    }
+
+    /**
+     * 設計說明：候選人按拒絕後，不呼叫 LLM，直接：
+     * 1. 寫入 UserMessage("REJECTED") 到 chatMemory
+     * 2. 寫入固定 AssistantMessage 到 chatMemory
+     * 3. 發布 ASSISTANT 事件，回傳固定文字串流
+     */
+    private StreamingChatResult handleRejected(UUID interviewId, String conversationId,
+                                               String proposalId, UUID assistantMsgId) {
+        StringBuilder fullResponse = new StringBuilder();
+        Flux<String> stream = Flux.defer(() -> {
+            chatMemory.add(conversationId, List.of(new UserMessage("REJECTED")));
+            String responseText = "了解，保留原始程式碼。";
+            chatMemory.add(conversationId, List.of(new AssistantMessage(responseText)));
+            log.info("[AI] interview={} handleRejected: proposalId={}", interviewId, proposalId);
+            return Flux.just(responseText);
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .doOnNext(fullResponse::append)
+        .doOnComplete(() -> {
+            try {
+                eventPublisher.publishEvent(new AiChatMessageEvent(
+                        interviewId, MessageType.ASSISTANT, fullResponse.toString()));
+            } catch (Exception e) {
+                log.error("Failed to publish assistant message event for handleRejected interview {}", interviewId, e);
+            }
+        })
+        .doOnError(e -> log.error("handleRejected failed for interview={} proposalId={}", interviewId, proposalId, e));
+
+        return new StreamingChatResult(stream, assistantMsgId);
+    }
+
     @Transactional(readOnly = true)
     public List<ConversationMessage> getHistory(UUID interviewId) {
         // 直接查詢 repository 而非透過 ChatMemory，因為 API 回傳需要 id、createdAt 等 DB 欄位
         return repository.findByInterviewIdOrderByCreatedAtAsc(interviewId);
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return "null";
+        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 
     /**
@@ -281,11 +432,11 @@ public class AiChatService {
      */
     private org.springframework.ai.chat.model.ChatResponse callWithToolLoop(
             ChatModel chatModel, String conversationId,
-            String userMessage, Map<String, Object> toolContextMap, String resolvedModelId) {
+            String userMessage, Map<String, Object> toolContextMap, String resolvedModelId, boolean isAction) {
 
         final CrossModelChatMemory memory = new CrossModelChatMemory(chatMemory, modelRegistry, resolvedModelId);
         memory.add(conversationId, List.of(new UserMessage(userMessage)));
-        return callLLMAndLoop(chatModel, memory, conversationId, toolContextMap, resolvedModelId);
+        return callLLMAndLoop(chatModel, memory, conversationId, toolContextMap, resolvedModelId, isAction);
     }
 
     /**
@@ -303,13 +454,20 @@ public class AiChatService {
      */
     private org.springframework.ai.chat.model.ChatResponse callLLMAndLoop(
             ChatModel chatModel, CrossModelChatMemory memory,
-            String conversationId, Map<String, Object> toolContextMap, String resolvedModelId) {
+            String conversationId, Map<String, Object> toolContextMap, String resolvedModelId, boolean isAction) {
 
         // 建立 ToolCallback map，供 while loop 內逐一查找並執行
         ToolCallback[] callbacks = ToolCallbacks.from(workspaceTools);
+
+        // 設計說明：action:ACCEPTED:<proposalId> / action:REJECTED:<proposalId> 已在 streamChat()
+        // 提前攔截，由 handleAccepted/handleRejected 直接處理，不會走到 callLLMAndLoop()。
+        // 此 isAction=true 分支目前為**未知 action 格式**的 fallback，
+        // 例如前端誤送 "action:UNKNOWN"，此時不提供任何工具，僅讓 LLM 回應文字說明。
+        if (isAction) {
+            callbacks = new ToolCallback[0];
+        }
         Map<String, ToolCallback> callbackMap = Arrays.stream(callbacks)
                 .collect(Collectors.toMap(cb -> cb.getToolDefinition().name(), cb -> cb));
-        ToolContext toolContext = new ToolContext(toolContextMap);
 
         ToolCallingChatOptions options = ToolCallingChatOptions.builder()
                 .toolCallbacks(callbacks)
@@ -322,7 +480,7 @@ public class AiChatService {
 
         // 防禦性驗證：適配後最後一條訊息應為 USER（對 callWithToolLoop 路徑）
         if (!messages.isEmpty() && !(messages.getLast() instanceof UserMessage)) {
-            log.debug("[AI-DIAG] interview={} callLLMAndLoop: last message type={}",
+            log.debug("[AI] interview={} callLLMAndLoop: last message type={}",
                     conversationId, messages.getLast().getMessageType());
         }
 
@@ -333,12 +491,12 @@ public class AiChatService {
         try {
             response = chatModel.call(prompt);
         } catch (Exception e) {
-            log.error("[AI-DIAG] interview={} 1st chatModel.call() failed. Error: {}",
+            log.error("[AI] interview={} 1st chatModel.call() failed. Error: {}",
                     conversationId, e.getMessage(), e);
             boolean hasToolHistory = messages.stream()
                     .anyMatch(m -> m instanceof AssistantMessage am && am.hasToolCalls());
             if (hasToolHistory) {
-                log.warn("[AI-DIAG] interview={} retrying with folded tool history", conversationId);
+                log.warn("[AI] interview={} retrying with folded tool history", conversationId);
                 prompt = new Prompt(new ArrayList<>(memory.getFolded(conversationId)), options);
                 response = chatModel.call(prompt);
             } else {
@@ -353,6 +511,10 @@ public class AiChatService {
         // Generation，導致 response.getResult()（只取第一個）拿不到 tool calls，
         // 而 response.hasToolCalls()（掃描所有）返回 true，產生不一致。
         AssistantMessage assistantOutput = resolveAssistantOutput(response, conversationId);
+        log.info("[AI] loop#0 LLM → text={}chars tools={} preview={}",
+                assistantOutput.getText() == null ? 0 : assistantOutput.getText().length(),
+                assistantOutput.getToolCalls().stream().map(AssistantMessage.ToolCall::name).toList(),
+                truncate(assistantOutput.getText(), 200));
         memory.add(conversationId, List.of(assistantOutput));
 
         // Tool loop — 以 assistantOutput.getToolCalls() 為準，有 tool calls 就執行
@@ -361,52 +523,68 @@ public class AiChatService {
             loopCount++;
             final int currentLoop = loopCount;
 
-            if (log.isDebugEnabled()) {
-                assistantOutput.getToolCalls().forEach(tc ->
-                        log.debug("[AI-DIAG] interview={} loop#{} toolCall id={} name={} args={}",
-                                conversationId, currentLoop, tc.id(), tc.name(), tc.arguments()));
-            }
-
-            // 執行 tool calls：逐一查找 ToolCallback → 執行 → 收集 ToolResponse
+                // 執行 tool calls：逐一查找 ToolCallback → 執行 → 收集 ToolResponse
             List<ToolResponseMessage.ToolResponse> toolResponses = new ArrayList<>();
             for (AssistantMessage.ToolCall tc : assistantOutput.getToolCalls()) {
                 ToolCallback cb = callbackMap.get(tc.name());
                 if (cb == null) {
-                    log.warn("[AI-DIAG] interview={} loop#{} unknown tool '{}'", conversationId, currentLoop, tc.name());
+                    log.warn("[AI] loop#{} unknown tool '{}'", currentLoop, tc.name());
+                    // TODO: remove this workaround after spring-ai PR #5438 is merged
+                    // Gemini FunctionResponse requires a JSON object; plain text causes parseJsonToMap() to crash
+                    String availableTools = String.join(", ", callbackMap.keySet());
                     toolResponses.add(new ToolResponseMessage.ToolResponse(
-                            tc.id(), tc.name(), "Error: unknown tool '" + tc.name() + "'"));
+                            tc.id(), tc.name(),
+                            "{\"error\":\"unknown tool '" + tc.name() + "'. Available tools: " + availableTools + "\"}"));
                     continue;
                 }
-                String callResult = cb.call(tc.arguments(), toolContext);
+                // 設計說明：每次 tool call 建立獨立的 ToolContext，注入 currentToolCallId（= ToolCall.id）。
+                // editProposal 工具從 ToolContext 讀取此 ID 當作 proposalId，寫入 SSE 事件供前端精確追蹤。
+                // 使用 per-call HashMap 而非修改共用 toolContextMap，避免多 tool call 時 ID 相互覆蓋。
+                Map<String, Object> perCallCtxMap = new HashMap<>(toolContextMap);
+                perCallCtxMap.put("currentToolCallId", tc.id());
+                ToolContext perCallContext = new ToolContext(perCallCtxMap);
+                long t0 = System.currentTimeMillis();
+                String callResult = cb.call(tc.arguments(), perCallContext);
+                long elapsed = System.currentTimeMillis() - t0;
+                log.info("[AI] loop#{} TOOL {} args={} → {}chars ({}ms)",
+                        currentLoop, tc.name(), truncate(tc.arguments(), 120),
+                        callResult != null ? callResult.length() : 0, elapsed);
+                // TODO: remove this workaround after spring-ai PR #5438 is merged
+                // Gemini FunctionResponse requires a JSON object; empty string causes parseJsonToMap() to crash
                 toolResponses.add(new ToolResponseMessage.ToolResponse(
-                        tc.id(), tc.name(), callResult != null ? callResult : ""));
+                        tc.id(), tc.name(), callResult != null ? callResult : "{\"result\":\"ok\"}"));
             }
 
             memory.add(conversationId, List.of(ToolResponseMessage.builder().responses(toolResponses).build()));
+
+            // 設計說明：editProposal 工具執行時已透過 SSE 將 diff 發送到前端，
+            // ToolResponse 寫入 memory 後即可結束 tool loop，等待候選人回應。
+            // 不需要再呼叫 LLM — 候選人已在前端看到 diff，等待其 ACCEPTED/REJECTED。
+            boolean hasEditProposal = assistantOutput.getToolCalls().stream()
+                    .anyMatch(tc -> "editProposal".equals(tc.name()));
+            if (hasEditProposal) {
+                log.info("[AI] loop#{} editProposal detected → break, waiting for candidate response", currentLoop);
+                response = new ChatResponse(List.of(new Generation(
+                        new AssistantMessage("已提交修改建議，請檢視上方的程式碼變更。"))));
+                break;
+            }
 
             // 從 DB 重新讀取完整歷史建構 prompt（含 orphan cleanup + provider 適配）
             messages = memory.get(conversationId);
             prompt = new Prompt(messages, options);
 
-            log.info("[AI-DIAG] interview={} loop#{} prompt messages: {}", conversationId, currentLoop,
-                    messages.stream()
-                            .map(m -> {
-                                if (m instanceof AssistantMessage am && am.hasToolCalls()) {
-                                    return "ASSISTANT(toolCalls=" + am.getToolCalls().stream()
-                                            .map(tc -> tc.name() + "[id=" + tc.id() + "]")
-                                            .toList() + ")";
-                                }
-                                return m.getMessageType() + "(len=" +
-                                        (m.getText() == null ? 0 : m.getText().length()) + ")";
-                            })
-                            .toList());
+            long uCount = messages.stream().filter(m -> m instanceof UserMessage).count();
+            long aCount = messages.stream().filter(m -> m instanceof AssistantMessage).count();
+            long tCount = messages.stream().filter(m -> m instanceof ToolResponseMessage).count();
+            log.info("[AI] loop#{} history: {} msgs [U:{} A:{} T:{}]",
+                    currentLoop, messages.size(), uCount, aCount, tCount);
 
             // 呼叫 model 取得下一輪回應
             // 發生錯誤時存入 fallback ASSISTANT，確保 ASSISTANT(toolCalls)+TOOL 後一定有 ASSISTANT
             try {
                 response = chatModel.call(prompt);
             } catch (Exception e) {
-                log.error("[AI-DIAG] interview={} tool loop call #{} failed. Error: {}",
+                log.error("[AI] interview={} tool loop call #{} failed. Error: {}",
                         conversationId, currentLoop + 1, e.getMessage(), e);
                 String fallbackText = "（AI 工具分析完成，但生成回應時發生錯誤。請再試一次或換個模型。）";
                 memory.add(conversationId, List.of(new AssistantMessage(fallbackText)));
@@ -414,6 +592,11 @@ public class AiChatService {
             }
 
             assistantOutput = resolveAssistantOutput(response, conversationId);
+            log.info("[AI] loop#{} LLM → text={}chars tools={} preview={}",
+                    currentLoop,
+                    assistantOutput.getText() == null ? 0 : assistantOutput.getText().length(),
+                    assistantOutput.getToolCalls().stream().map(AssistantMessage.ToolCall::name).toList(),
+                    truncate(assistantOutput.getText(), 200));
             memory.add(conversationId, List.of(assistantOutput));
         }
 
@@ -456,7 +639,7 @@ public class AiChatService {
             results.stream()
                     .map(g -> g.getOutput().getMetadata())
                     .forEach(mergedProps::putAll);
-            log.debug("[AI-DIAG] interview={} resolveAssistantOutput: {} result(s) → merged (text={}chars, toolCalls={})",
+            log.debug("[AI] interview={} resolveAssistantOutput: {} result(s) → merged (text={}chars, toolCalls={})",
                     conversationId, results.size(), textContent.length(),
                     allToolCalls.stream().map(AssistantMessage.ToolCall::name).toList());
             return AssistantMessage.builder()

@@ -52,7 +52,21 @@ server:
   port: 8080
   shutdown: graceful
 
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
+
 management:
+  tracing:
+    sampling:
+      probability: 1.0   # 開發環境全取樣，prod 可調低
+  otlp:
+    metrics:
+      export:
+        enabled: false   # 本地無 OTLP collector，停用避免 Connection refused 噪音
+    tracing:
+      export:
+        enabled: false
   endpoints:
     web:
       exposure:

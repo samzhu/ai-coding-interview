@@ -22,6 +22,9 @@ public interface InterviewFileProvider {
     /** 讀取指定路徑的檔案內容（相對或絕對路徑皆可）。 */
     String readFile(UUID interviewId, String path);
 
+    /** 將內容寫入工作區指定路徑的檔案。 */
+    void writeFile(UUID interviewId, String path, String content);
+
     /**
      * 在工作區目錄下執行 shell 指令（自動 cd 至 workspace）。
      *
