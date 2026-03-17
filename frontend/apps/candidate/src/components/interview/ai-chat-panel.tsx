@@ -452,6 +452,8 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
           <div className="p-3 border-t border-[#333] shrink-0">
             <PromptInput
               onSubmit={(msg) => {
+                // 防呆：尚未選取模型時不送出，避免後端因 modelId 為空而出錯。
+                if (!selectedModelId) return;
                 // 送出新訊息前，隱性拒絕當前 pending 的 ChangeSet（如有）。
                 // 設計說明：不通知 backend — orphan ASSISTANT(toolCalls=[editProposal])
                 // 由 CrossModelChatMemory.get() 自動 fold 為純文字，對話正常繼續。
@@ -478,7 +480,8 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
                     ))}
                   </PromptInputSelectContent>
                 </PromptInputSelect>
-                <PromptInputSubmit status={status} onStop={stop} />
+                {/* 設計說明：沒選取模型時 disable 送出，避免後端因 modelId 為空而出錯。 */}
+                <PromptInputSubmit status={status} onStop={stop} disabled={!selectedModelId} />
               </PromptInputFooter>
             </PromptInput>
           </div>
