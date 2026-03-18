@@ -19,6 +19,8 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -539,7 +541,7 @@ public class AiChatService {
         // 第一次呼叫：若失敗且歷史含 tool call，嘗試降級為文字摺疊後重試
         org.springframework.ai.chat.model.ChatResponse response;
         try {
-            response = chatModel.call(prompt);
+            response = callModelWithLogging(chatModel, prompt);
         } catch (Exception e) {
             log.error("[AI] interview={} 1st chatModel.call() failed. Error: {}",
                     conversationId, e.getMessage(), e);
@@ -548,7 +550,7 @@ public class AiChatService {
             if (hasToolHistory) {
                 log.warn("[AI] interview={} retrying with folded tool history", conversationId);
                 prompt = new Prompt(new ArrayList<>(memory.getFolded(conversationId)), options);
-                response = chatModel.call(prompt);
+                response = callModelWithLogging(chatModel, prompt);
             } else {
                 throw new RuntimeException("AI 呼叫失敗：" + e.getMessage(), e);
             }
@@ -568,6 +570,7 @@ public class AiChatService {
         memory.add(conversationId, List.of(assistantOutput));
 
         // Tool loop — 以 assistantOutput.getToolCalls() 為準，有 tool calls 就執行
+        // 安全閥：try-catch 防 malformed JSON 崩潰；SSE Controller 5min latch 防無限掛起；LLM finishReason=STOP 自然終止
         int loopCount = 0;
         while (!assistantOutput.getToolCalls().isEmpty()) {
             loopCount++;
@@ -587,6 +590,10 @@ public class AiChatService {
                 AssistantMessage.ToolCall tc = pendingCalls.get(i);
                 log.info("[AI] loop#{} executing tool [{}/{}] name={} args={}",
                         currentLoop, i + 1, pendingCalls.size(), tc.name(), truncate(tc.arguments(), 150));
+                // 診斷用：editProposal args 完整輸出（LLM 回傳內容可能格式異常，需看原始 JSON）
+                if ("editProposal".equals(tc.name())) {
+                    log.info("[AI-DIAG] editProposal FULL args ({} chars): {}", tc.arguments().length(), tc.arguments());
+                }
                 ToolCallback cb = callbackMap.get(tc.name());
                 if (cb == null) {
                     log.warn("[AI] loop#{} unknown tool '{}'", currentLoop, tc.name());
@@ -605,7 +612,23 @@ public class AiChatService {
                 perCallCtxMap.put("currentToolCallId", tc.id());
                 ToolContext perCallContext = new ToolContext(perCallCtxMap);
                 long t0 = System.currentTimeMillis();
-                String callResult = cb.call(tc.arguments(), perCallContext);
+                String callResult;
+                try {
+                    callResult = cb.call(tc.arguments(), perCallContext);
+                } catch (Exception e) {
+                    // 設計說明：小模型（如 GPT-5-nano）偶爾產生 malformed JSON，
+                    // 導致 MethodToolCallback 反序列化失敗拋出 ToolExecutionException。
+                    // 捕獲後回傳 JSON 錯誤給 LLM，讓其修正參數重試，而非崩潰整個 stream。
+                    long elapsedOnError = System.currentTimeMillis() - t0;
+                    String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+                    log.warn("[AI] loop#{} TOOL {} execution failed ({}ms): {}",
+                            currentLoop, tc.name(), elapsedOnError, errorMsg);
+                    toolResponses.add(new ToolResponseMessage.ToolResponse(
+                            tc.id(), tc.name(),
+                            "{\"error\":\"Tool execution failed: " +
+                            errorMsg.replace("\"", "'").replace("\n", " ") + "\"}"));
+                    continue;
+                }
                 long elapsed = System.currentTimeMillis() - t0;
                 log.info("[AI] loop#{} TOOL {} args={} → {}chars ({}ms) result={}",
                         currentLoop, tc.name(), truncate(tc.arguments(), 120),
@@ -641,7 +664,7 @@ public class AiChatService {
             // 呼叫 model 取得下一輪回應
             // 發生錯誤時存入 fallback ASSISTANT，確保 ASSISTANT(toolCalls)+TOOL 後一定有 ASSISTANT
             try {
-                response = chatModel.call(prompt);
+                response = callModelWithLogging(chatModel, prompt);
             } catch (Exception e) {
                 log.error("[AI] interview={} tool loop call #{} failed. Error: {}",
                         conversationId, currentLoop + 1, e.getMessage(), e);
@@ -751,6 +774,20 @@ public class AiChatService {
         } catch (Exception e) {
             log.debug("Failed to emit data-file-changed SSE: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 透過 ChatClient + SimpleLoggerAdvisor 呼叫 LLM，讓 Spring AI 在 DEBUG 層級
+     * 自動記錄完整的 request prompt 與 response（包含 tool call arguments）。
+     * logging.level.org.springframework.ai.chat.client.advisor=DEBUG 啟用輸出。
+     */
+    private ChatResponse callModelWithLogging(ChatModel chatModel, Prompt prompt) {
+        return ChatClient.builder(chatModel)
+                .defaultAdvisors(new SimpleLoggerAdvisor())
+                .build()
+                .prompt(prompt)
+                .call()
+                .chatResponse();
     }
 
     private String resolveModelId(UUID interviewId, String modelIdOverride) {

@@ -53,14 +53,35 @@ public class FileService implements InterviewFileProvider {
         String fullPath = resolveFullPath(ctx.workspace(), relativePath);
         return filterExcluded(
                 containerService.listDirectory(ctx.containerId(), fullPath),
-                ctx.workspace(), ctx.excludePatterns());
+                ctx.workspace(), ctx.excludePatterns())
+            .stream()
+            .map(f -> new ContainerFile(
+                    stripWorkspacePrefix(f.filePath(), ctx.workspace()),
+                    f.isDirectory(), f.size()))
+            .toList();
     }
 
     public List<ContainerFile> directoryTree(UUID interviewId, int maxDepth) {
         WorkspaceContext ctx = resolveWorkspace(interviewId);
         return filterExcluded(
                 containerService.directoryTree(ctx.containerId(), ctx.workspace(), maxDepth),
-                ctx.workspace(), ctx.excludePatterns());
+                ctx.workspace(), ctx.excludePatterns())
+            .stream()
+            .map(f -> new ContainerFile(
+                    stripWorkspacePrefix(f.filePath(), ctx.workspace()),
+                    f.isDirectory(), f.size()))
+            .toList();
+    }
+
+    // Converts "/workspace/src/main" → "src/main" so AI tools receive workspace-relative paths.
+    private String stripWorkspacePrefix(String filePath, String workspace) {
+        if (filePath.startsWith(workspace + "/")) {
+            return filePath.substring(workspace.length() + 1);
+        }
+        if (filePath.startsWith(workspace)) {
+            return filePath.substring(workspace.length());
+        }
+        return filePath;
     }
 
     private boolean isExcluded(String filePath, String workspace, List<String> patterns) {
