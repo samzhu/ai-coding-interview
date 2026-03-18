@@ -17,6 +17,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +39,7 @@ import java.util.stream.Collectors;
  *
  * 設計說明：
  * - 工具方法透過 ToolContext 取得 interviewId，避免 singleton bean 持有請求狀態
- * - 讀取工具（listFiles、readFile）和執行工具（runCommand）由 AI 自動呼叫
+ * - 瀏覽工具（listDirectory、directoryTree）和讀取工具（readFile）及執行工具（runCommand）由 AI 自動呼叫
  * - 修改檔案刻意不提供 writeFile 工具；AI 透過 editProposal 工具提出修改建議，
  *   候選人審查後手動套用，確保「人在迴路中（Human-in-the-loop）」的控制權
  * - runCommand 限制 30 秒 timeout 防止長時間阻塞
@@ -68,30 +69,86 @@ public class InterviewWorkspaceTools {
     }
 
     /**
-     * 列出工作區所有檔案結構（已排除 exam.yml 等系統檔）。
+     * 列出指定目錄的單層內容（非遞迴）。
+     * 回傳 [FILE] 和 [DIR] 前綴條目，讓 AI 逐層瀏覽專案結構。
      */
-    @Tool(description = "List all files in the candidate's workspace project structure. Use this first to understand the project layout before reading files.")
-    public String listFiles(ToolContext toolContext) {
+    @Tool(description = "List entries in a single directory (non-recursive). " +
+            "Returns [FILE] and [DIR] prefixed entries. " +
+            "Use this to browse the project one level at a time. " +
+            "Omit path or pass empty string for workspace root.")
+    public String listDirectory(
+            @ToolParam(description = "Relative path from workspace root, e.g. 'src/main'. Empty for root.")
+            String path,
+            ToolContext toolContext) {
         UUID interviewId = extractInterviewId(toolContext);
         String callId = UUID.randomUUID().toString();
-        emitToolEvent(toolContext, callId, "listFiles", "running", null);
+        String displayPath = (path == null || path.isBlank()) ? "/" : path;
+        emitToolEvent(toolContext, callId, "listDirectory", "running", displayPath);
         try {
-            List<ContainerFile> files = fileProvider.listFiles(interviewId);
+            List<ContainerFile> entries = fileProvider.listDirectory(interviewId, path);
             String result;
-            if (files.isEmpty()) {
-                result = "Workspace is empty.";
+            if (entries.isEmpty()) {
+                result = "Directory is empty.";
             } else {
-                result = files.stream()
+                result = entries.stream()
                         .map(f -> (f.isDirectory() ? "[DIR]  " : "[FILE] ") + f.filePath())
                         .collect(Collectors.joining("\n"));
             }
-            emitToolEvent(toolContext, callId, "listFiles", "completed",
-                    files.stream().filter(f -> !f.isDirectory()).count() + " 個檔案");
+            long fileCount = entries.stream().filter(f -> !f.isDirectory()).count();
+            long dirCount = entries.stream().filter(ContainerFile::isDirectory).count();
+            emitToolEvent(toolContext, callId, "listDirectory", "completed",
+                    fileCount + " 個檔案, " + dirCount + " 個目錄");
             return result;
         } catch (Exception e) {
-            log.warn("listFiles failed for interview {}", interviewId, e);
-            emitToolEvent(toolContext, callId, "listFiles", "error", e.getMessage());
-            return "Error listing files: " + e.getMessage();
+            log.warn("listDirectory failed for interview {}", interviewId, e);
+            emitToolEvent(toolContext, callId, "listDirectory", "error", e.getMessage());
+            return "Error listing directory: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 顯示工作區的遞迴目錄樹，讓 AI 快速了解整個專案結構。
+     * 回傳縮排樹狀格式，附 [FILE] / [DIR] 標記。
+     */
+    @Tool(description = "Show the recursive directory tree of the workspace. " +
+            "Returns an indented tree with [FILE] and [DIR] markers. " +
+            "Use this first to understand the full project layout. " +
+            "Default depth 3; increase for deeper exploration.")
+    public String directoryTree(
+            @ToolParam(description = "Max depth (1-10, default 3)")
+            Integer maxDepth,
+            ToolContext toolContext) {
+        UUID interviewId = extractInterviewId(toolContext);
+        String callId = UUID.randomUUID().toString();
+        int depth = (maxDepth == null || maxDepth < 1) ? 3 : Math.min(maxDepth, 10);
+        emitToolEvent(toolContext, callId, "directoryTree", "running", "depth=" + depth);
+        try {
+            List<ContainerFile> entries = fileProvider.directoryTree(interviewId, depth);
+            String result;
+            if (entries.isEmpty()) {
+                result = "Workspace is empty.";
+            } else {
+                // Strip workspace prefix, sort by path, then indent by depth
+                result = entries.stream()
+                        .sorted(Comparator.comparing(ContainerFile::filePath))
+                        .map(f -> {
+                            // Count path segments to determine indent level
+                            int segments = (int) f.filePath().chars().filter(c -> c == '/').count();
+                            String indent = "  ".repeat(Math.max(0, segments - 1));
+                            String name = f.filePath().contains("/")
+                                    ? f.filePath().substring(f.filePath().lastIndexOf('/') + 1)
+                                    : f.filePath();
+                            return indent + (f.isDirectory() ? "[DIR]  " : "[FILE] ") + name;
+                        })
+                        .collect(Collectors.joining("\n"));
+            }
+            long fileCount = entries.stream().filter(f -> !f.isDirectory()).count();
+            emitToolEvent(toolContext, callId, "directoryTree", "completed", fileCount + " 個檔案");
+            return result;
+        } catch (Exception e) {
+            log.warn("directoryTree failed for interview {}", interviewId, e);
+            emitToolEvent(toolContext, callId, "directoryTree", "error", e.getMessage());
+            return "Error getting directory tree: " + e.getMessage();
         }
     }
 
@@ -111,6 +168,10 @@ public class InterviewWorkspaceTools {
         try {
             String content = fileProvider.readFile(interviewId, path);
             String result = (content != null && !content.isBlank()) ? content : "(empty file)";
+            // 設計說明：同時記錄內容長度與開頭/結尾，協助診斷 AI 收到截斷檔案（無 package/class 宣告）的問題。
+            String preview50 = result.length() > 50 ? result.substring(0, 50).replace("\n", "\\n") : result.replace("\n", "\\n");
+            String tail30 = result.length() > 30 ? "..." + result.substring(result.length() - 30).replace("\n", "\\n") : "";
+            log.info("[readFile] interview={} path={} size={}chars head={}{}", interviewId, path, result.length(), preview50, tail30);
             emitToolEvent(toolContext, callId, "readFile", "completed", shortPath);
             return result;
         } catch (Exception e) {
@@ -149,6 +210,10 @@ public class InterviewWorkspaceTools {
             sb.append("\nExit code: ").append(result.exitCode());
             emitToolEvent(toolContext, callId, "runCommand", "completed",
                     displayCmd + " (exit " + result.exitCode() + ")");
+            // 設計說明：runCommand 可能修改工作區檔案（如格式化工具 black、prettier）。
+            // 執行完成後（不論 exit code）發送 data-file-changed 事件（filePaths=[] 表示全量刷新），
+            // 讓前端從 Docker 回讀所有檔案，確保編輯器顯示最新內容。
+            emitFileChangedEvent(toolContext, List.of());
             return sb.toString();
         } catch (Exception e) {
             log.warn("runCommand '{}' failed for interview {}", command, interviewId, e);
@@ -172,9 +237,11 @@ public class InterviewWorkspaceTools {
      *   由 AiChatService.handleAccepted/handleRejected 直接處理（不呼叫 LLM）。
      */
     @Tool(description = "Submit batch code edit proposals for candidate review. " +
-            "Gather all information using other tools FIRST, then call this ONCE. " +
-            "'original' must match the current file content exactly (use readFile to get it). " +
-            "After submitting proposals, explain the changes to the candidate in text. " +
+            "REQUIRED: call readFile immediately before this tool to get the CURRENT file content — never use remembered or previously proposed content as 'original'. " +
+            "'original' must be copied verbatim from the readFile result; any mismatch will cause the patch to fail. " +
+            "'proposed' is the replacement snippet. " +
+            "Call this tool ONCE per conversation turn. " +
+            "After submitting, explain the changes to the candidate in text. " +
             "The candidate will review the diff and send ACCEPTED or REJECTED.")
     public String editProposal(
             @ToolParam(description = "List of file changes to propose")
@@ -199,6 +266,32 @@ public class InterviewWorkspaceTools {
         // handleAccepted() 用 proposalId 掃描 memory 即可精確定位。
         // 後端 callLLMAndLoop() 偵測 editProposal → break，候選人按同意/拒絕由 handleAccepted/handleRejected 處理。
         return "PENDING_REVIEW";
+    }
+
+    /**
+     * 設計說明：runCommand 完成後發送 data-file-changed 事件，通知前端從 Docker 回讀最新檔案。
+     * filePaths 為空陣列表示全量重新載入（前端呼叫 loadWorkspaceFiles）。
+     * 若 filePaths 有指定路徑，前端只刷新這些檔案（前端呼叫 refreshFiles(paths)）。
+     */
+    private void emitFileChangedEvent(ToolContext toolContext, List<String> filePaths) {
+        Object rawEmitter = toolContext.getContext().get("toolSseEmitter");
+        if (rawEmitter instanceof Consumer) {
+            @SuppressWarnings("unchecked")
+            Consumer<String> emitter = (Consumer<String>) rawEmitter;
+            try {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("filePaths", filePaths);
+
+                Map<String, Object> event = new LinkedHashMap<>();
+                event.put("type", "data-file-changed");
+                event.put("id", UUID.randomUUID().toString());
+                event.put("data", data);
+                String json = objectMapper.writeValueAsString(event);
+                emitter.accept("data: " + json + "\n\n");
+            } catch (Exception e) {
+                log.debug("Failed to emit file-changed SSE event: {}", e.getMessage());
+            }
+        }
     }
 
     /**

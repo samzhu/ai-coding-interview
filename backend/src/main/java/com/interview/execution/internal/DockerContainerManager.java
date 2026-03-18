@@ -107,19 +107,47 @@ class DockerContainerManager implements ContainerManager {
     }
 
     @Override
-    public List<ContainerFile> listFiles(String containerId, String dir) {
+    public List<ContainerFile> listDirectory(String containerId, String dir) {
         try {
-            String[] output = execRaw(containerId, "find " + dir + " -not -type d", 10);
-            List<ContainerFile> files = new ArrayList<>();
+            // ls -1ap: 1 entry per line, append / to directories, -a includes hidden files
+            String[] output = execRaw(containerId, "ls -1ap " + shellEscape(dir), 10);
+            List<ContainerFile> entries = new ArrayList<>();
+            for (String line : output[0].split("\n")) {
+                String entry = line.trim();
+                if (entry.isEmpty() || entry.equals("./") || entry.equals("../")) continue;
+                boolean isDir = entry.endsWith("/");
+                // Remove trailing slash so filePath is consistent
+                String name = isDir ? entry.substring(0, entry.length() - 1) : entry;
+                String fullPath = dir.endsWith("/") ? dir + name : dir + "/" + name;
+                entries.add(new ContainerFile(fullPath, isDir, 0));
+            }
+            return entries;
+        } catch (Exception e) {
+            log.warn("listDirectory failed for container {}: {}", containerId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Override
+    public List<ContainerFile> directoryTree(String containerId, String dir, int maxDepth) {
+        // Clamp depth to a safe range
+        int depth = Math.max(1, Math.min(maxDepth, 10));
+        try {
+            // find with -maxdepth/-mindepth; prefix D/F so we know which entries are directories
+            String cmd = "find " + shellEscape(dir) + " -maxdepth " + depth + " -mindepth 1 | sort | " +
+                    "while read -r p; do [ -d \"$p\" ] && echo \"D $p\" || echo \"F $p\"; done";
+            String[] output = execRaw(containerId, cmd, 15);
+            List<ContainerFile> entries = new ArrayList<>();
             for (String line : output[0].split("\n")) {
                 String trimmed = line.trim();
-                if (!trimmed.isEmpty()) {
-                    files.add(new ContainerFile(trimmed, false, 0));
-                }
+                if (trimmed.length() < 3) continue;
+                boolean isDir = trimmed.startsWith("D ");
+                String path = trimmed.substring(2);
+                entries.add(new ContainerFile(path, isDir, 0));
             }
-            return files;
+            return entries;
         } catch (Exception e) {
-            log.warn("listFiles failed for container {}: {}", containerId, e.getMessage());
+            log.warn("directoryTree failed for container {}: {}", containerId, e.getMessage());
             return List.of();
         }
     }

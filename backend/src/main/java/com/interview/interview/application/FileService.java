@@ -28,15 +28,39 @@ public class FileService implements InterviewFileProvider {
         this.examConfigService = examConfigService;
     }
 
-    public List<ContainerFile> listFiles(UUID interviewId) {
+    // Resolves the three repeated steps (container → examConfig → workspace/exclude) into one call.
+    private record WorkspaceContext(String containerId, String workspace, List<String> excludePatterns) {}
+
+    private WorkspaceContext resolveWorkspace(UUID interviewId) {
         String containerId = interviewService.ensureContainerRunning(interviewId);
         ExamConfig examConfig = examConfigService.getExamConfig(containerId);
-        String workspace = examConfig.effectiveWorkspace();
-        List<ContainerFile> all = containerService.listFiles(containerId, workspace);
-        List<String> excludePatterns = examConfig.exclude();
-        return all.stream()
-                .filter(f -> !isExcluded(f.filePath(), workspace, excludePatterns))
+        return new WorkspaceContext(containerId, examConfig.effectiveWorkspace(), examConfig.exclude());
+    }
+
+    private String resolveFullPath(String workspace, String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) return workspace;
+        return relativePath.startsWith("/") ? relativePath : workspace + "/" + relativePath;
+    }
+
+    private List<ContainerFile> filterExcluded(List<ContainerFile> files, String workspace, List<String> patterns) {
+        return files.stream()
+                .filter(f -> !isExcluded(f.filePath(), workspace, patterns))
                 .toList();
+    }
+
+    public List<ContainerFile> listDirectory(UUID interviewId, String relativePath) {
+        WorkspaceContext ctx = resolveWorkspace(interviewId);
+        String fullPath = resolveFullPath(ctx.workspace(), relativePath);
+        return filterExcluded(
+                containerService.listDirectory(ctx.containerId(), fullPath),
+                ctx.workspace(), ctx.excludePatterns());
+    }
+
+    public List<ContainerFile> directoryTree(UUID interviewId, int maxDepth) {
+        WorkspaceContext ctx = resolveWorkspace(interviewId);
+        return filterExcluded(
+                containerService.directoryTree(ctx.containerId(), ctx.workspace(), maxDepth),
+                ctx.workspace(), ctx.excludePatterns());
     }
 
     private boolean isExcluded(String filePath, String workspace, List<String> patterns) {

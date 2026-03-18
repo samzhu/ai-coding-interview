@@ -32,7 +32,7 @@ export function InterviewWorkspace({
   const { submit } = useCodeSubmission();
   const { layout, toggleFileExplorer, toggleRightPanel, toggleTerminal, resetLayout, autoExpandTerminal } =
     useWorkspaceLayout();
-  const { saveFileDebounced } = useWorkspaceFiles(interviewId);
+  const { saveFileDebounced, loadWorkspaceFiles, flushPendingSaves } = useWorkspaceFiles(interviewId);
   const explorerResize = useResizablePanel({ initialWidth: 180, minWidth: 120, maxWidth: 480 });
   const rightPanelResize = useResizablePanel({ initialWidth: 320, minWidth: 240, maxWidth: 600, reversed: true });
   const terminalResize = useResizableHeight({ initialHeight: 192, minHeight: 100, maxHeight: 500 });
@@ -47,6 +47,9 @@ export function InterviewWorkspace({
   }, [interviewId, router]);
 
   async function handleRun() {
+    // Fix 1：Submit 前 flush pending debounced writes，確保 Docker 擁有最新內容。
+    // 解決：用戶打字 → debounce 1s 計時中 → 立刻按 Run → Docker 跑舊版本的競態問題。
+    await flushPendingSaves();
     // 先展開終端面板：submit() 會觸發 setRunning(true)，導致 TerminalPanel 切換到「測試結果」tab
     // 並嵌入 xterm 開始串流；autoExpandTerminal 需在此之前執行確保面板已展開
     autoExpandTerminal();
@@ -111,7 +114,7 @@ export function InterviewWorkspace({
               className="shrink-0 border-r border-[#333] overflow-hidden"
               style={{ width: explorerResize.width }}
             >
-              <FileExplorer onCollapse={toggleFileExplorer} />
+              <FileExplorer onCollapse={toggleFileExplorer} onRefresh={loadWorkspaceFiles} />
             </div>
             {/* Drag handle */}
             <div

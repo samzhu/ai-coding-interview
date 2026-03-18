@@ -20,7 +20,11 @@ class FileController {
 
     @GetMapping
     List<ContainerFile> listFiles(@PathVariable UUID interviewId) {
-        return fileService.listFiles(interviewId);
+        // 前端 File Explorer 從檔案路徑推導目錄結構，只需要檔案條目（非目錄）。
+        // depth 20 足以涵蓋任何專案。
+        return fileService.directoryTree(interviewId, 20).stream()
+                .filter(f -> !f.isDirectory())
+                .toList();
     }
 
     @GetMapping("/content")

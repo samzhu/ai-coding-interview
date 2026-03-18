@@ -11,8 +11,8 @@ import org.springframework.ai.tool.annotation.ToolParam;
 public record FileChange(
         @ToolParam(description = "Relative file path from workspace root, e.g. 'src/main/java/Game.java'")
         String file,
-        @ToolParam(description = "Exact current code to replace — must match file content exactly (use readFile to verify)")
+        @ToolParam(description = "Exact code snippet to replace — MUST be copied verbatim from the latest readFile result. Never use previously proposed or remembered content; always readFile first to get the current on-disk version.")
         String original,
-        @ToolParam(description = "New code to replace the original with")
+        @ToolParam(description = "Replacement code snippet to substitute the original with")
         String proposed
 ) {}

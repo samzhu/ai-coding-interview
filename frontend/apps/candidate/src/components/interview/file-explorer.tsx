@@ -11,6 +11,7 @@ import {
   File,
   Cog,
   Zap,
+  RefreshCw,
 } from "lucide-react";
 import { useInterview } from "@/contexts/interview-context";
 import { cn } from "@interview/shared/lib/utils";
@@ -18,6 +19,7 @@ import type { CheckpointFileState } from "@interview/shared/types";
 
 interface FileExplorerProps {
   onCollapse: () => void;
+  onRefresh?: () => void;
 }
 
 interface TreeNode {
@@ -219,7 +221,7 @@ function TreeRow({
   );
 }
 
-export function FileExplorer({ onCollapse }: FileExplorerProps) {
+export function FileExplorer({ onCollapse, onRefresh }: FileExplorerProps) {
   const { state, openFile } = useInterview();
   const { files, activeFilePath } = state;
 
@@ -258,13 +260,24 @@ export function FileExplorer({ onCollapse }: FileExplorerProps) {
         <span className="text-[10px] font-semibold tracking-widest text-[#858585] uppercase">
           Explorer
         </span>
-        <button
-          onClick={onCollapse}
-          className="text-[#858585] hover:text-[#cccccc] transition-colors text-sm leading-none px-1"
-          title="折疊檔案瀏覽器"
-        >
-          «
-        </button>
+        <div className="flex items-center gap-1">
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              className="text-[#858585] hover:text-[#cccccc] transition-colors p-0.5 rounded"
+              title="重新載入檔案（終端機修改後使用）"
+            >
+              <RefreshCw size={11} />
+            </button>
+          )}
+          <button
+            onClick={onCollapse}
+            className="text-[#858585] hover:text-[#cccccc] transition-colors text-sm leading-none px-1"
+            title="折疊檔案瀏覽器"
+          >
+            «
+          </button>
+        </div>
       </div>
 
       {/* Workspace root label */}

@@ -31,7 +31,12 @@ class StubContainerManager implements ContainerManager {
     }
 
     @Override
-    public List<ContainerFile> listFiles(String containerId, String dir) {
+    public List<ContainerFile> listDirectory(String containerId, String dir) {
+        return List.of();
+    }
+
+    @Override
+    public List<ContainerFile> directoryTree(String containerId, String dir, int maxDepth) {
         return List.of();
     }
 

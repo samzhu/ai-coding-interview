@@ -28,8 +28,12 @@ public class ContainerService {
         return containerManager.isRunning(containerId);
     }
 
-    public List<ContainerFile> listFiles(String containerId, String dir) {
-        return containerManager.listFiles(containerId, dir);
+    public List<ContainerFile> listDirectory(String containerId, String dir) {
+        return containerManager.listDirectory(containerId, dir);
+    }
+
+    public List<ContainerFile> directoryTree(String containerId, String dir, int maxDepth) {
+        return containerManager.directoryTree(containerId, dir, maxDepth);
     }
 
     public String readFile(String containerId, String path) {

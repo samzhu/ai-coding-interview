@@ -11,7 +11,11 @@ public interface ContainerManager {
 
     boolean isRunning(String containerId);
 
-    List<ContainerFile> listFiles(String containerId, String dir);
+    /** Single-level listing of a directory. Returns files and immediate subdirectories. */
+    List<ContainerFile> listDirectory(String containerId, String dir);
+
+    /** Recursive listing up to maxDepth. Returns files and directories with correct isDirectory flag. */
+    List<ContainerFile> directoryTree(String containerId, String dir, int maxDepth);
 
     String readFile(String containerId, String path);
 

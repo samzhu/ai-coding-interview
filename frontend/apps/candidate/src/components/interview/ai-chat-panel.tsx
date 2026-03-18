@@ -10,6 +10,7 @@ import type { AiModelInfo, ChatMessage } from "@interview/shared/types";
 import { apiGet, getApiUrl } from "@interview/shared/lib/api-client";
 import { stripEditProposals } from "@interview/shared/lib/edit-proposal-utils";
 import { useInterview } from "@/contexts/interview-context";
+import { useWorkspaceFiles } from "@/hooks/use-workspace-files";
 import {
   Conversation,
   ConversationContent,
@@ -78,7 +79,7 @@ function getEditProposals(message: UIMessage): EditProposalData[] {
  */
 interface ToolInvocationData {
   toolCallId: string;
-  toolName: "listFiles" | "readFile" | "runCommand";
+  toolName: "listDirectory" | "directoryTree" | "readFile" | "runCommand";
   state: "running" | "completed" | "error";
   summary?: string;
 }
@@ -101,12 +102,28 @@ function getToolInvocations(message: UIMessage): Map<string, ToolInvocationData>
   return result;
 }
 
+/**
+ * 從 message.parts 提取 data-file-changed 事件。
+ * 設計說明：後端在 handleAccepted() 寫檔後及 runCommand() 執行後發送此事件，
+ * 通知前端從 Docker 回讀最新內容，確保編輯器與 Docker 檔案同步。
+ * filePaths 為空陣列表示全量重新載入。
+ */
+function getFileChangedEvents(
+  message: UIMessage
+): Array<{ id: string; data: { filePaths: string[] } }> {
+  return message.parts
+    .filter((p) => p.type === "data-file-changed")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((p) => p as any);
+}
+
 /** Tool 名稱對應中文顯示名與圖示 */
 const TOOL_META: Record<string, { label: string; Icon: React.ComponentType<{ className?: string }> }> = {
-  listFiles:    { label: "列出工作區檔案", Icon: FolderOpen },
-  readFile:     { label: "讀取檔案", Icon: FileSearch },
-  runCommand:   { label: "執行指令", Icon: Terminal },
-  editProposal: { label: "提交修改建議", Icon: FileSearch },
+  listDirectory: { label: "列出目錄", Icon: FolderOpen },
+  directoryTree: { label: "顯示目錄樹", Icon: FolderOpen },
+  readFile:      { label: "讀取檔案", Icon: FileSearch },
+  runCommand:    { label: "執行指令", Icon: Terminal },
+  editProposal:  { label: "提交修改建議", Icon: FileSearch },
 };
 
 /**
@@ -156,6 +173,7 @@ function ToolInvocationBadge({ toolName, state, summary }: ToolInvocationData) {
 
 export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps) {
   const { state, registerSendAiMessage, registerChangeSet, rejectChangeSet } = useInterview();
+  const { flushPendingSaves, refreshFiles } = useWorkspaceFiles(interviewId);
   const [models, setModels] = useState<AiModelInfo[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   // 用 ref 存模型 ID，讓 transport body function 每次 request 動態取值，
@@ -206,6 +224,28 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
     });
   }, [registerSendAiMessage, sendMessage]);
 
+  // Fix 2c & 3：監聽 data-file-changed SSE 事件，從 Docker 回讀最新檔案內容。
+  // 設計說明：handleAccepted() 寫檔後及 runCommand() 執行後，後端發送此事件。
+  // 前端先 flush pending saves（清除舊版本），再 refreshFiles（從 Docker 取最新）。
+  // 以 eventKey (messageId/partId) 去重，避免 React re-render 重複觸發。
+  const processedFileChangedIds = useRef(new Set<string>());
+  useEffect(() => {
+    for (const message of messages) {
+      if (message.role !== "assistant") continue;
+      const events = getFileChangedEvents(message);
+      for (const event of events) {
+        const eventKey = `${message.id}/${event.id ?? ""}`;
+        if (processedFileChangedIds.current.has(eventKey)) continue;
+        processedFileChangedIds.current.add(eventKey);
+        const filePaths: string[] = event.data?.filePaths ?? [];
+        console.log("[AiChatPanel] data-file-changed → refreshFiles:", filePaths);
+        flushPendingSaves()
+          .then(() => refreshFiles(filePaths))
+          .catch((err) => console.error("[AiChatPanel] refreshFiles failed:", err));
+      }
+    }
+  }, [messages, flushPendingSaves, refreshFiles]);
+
   // 錯誤發生時輸出完整細節到 console，方便開發除錯
   useEffect(() => {
     if (!error) return;
@@ -236,8 +276,10 @@ export function AiChatPanel({ interviewId, aiEnabled = true }: AiChatPanelProps)
       // 從後端 TOOL_CALL 訊息的中文摘要反推 toolName 和 summary，
       // 以便重建 data-tool-invocation parts，讓 ToolInvocationBadge 正確渲染。
       function parseToolCallContent(content: string): { toolName: string; summary?: string } {
-        if (content === "列出工作區檔案") return { toolName: "listFiles" };
+        if (content === "顯示目錄樹") return { toolName: "directoryTree" };
         if (content === "提交修改建議") return { toolName: "editProposal", summary: content };
+        const listDirMatch = content.match(/^列出目錄\s*(.*)/);
+        if (listDirMatch) return { toolName: "listDirectory", summary: listDirMatch[1].trim() || "/" };
         const readMatch = content.match(/^讀取檔案\s+(.+)/);
         if (readMatch) return { toolName: "readFile", summary: readMatch[1].split("\n")[0] };
         // runCommand 指令可能含換行（如 heredoc），僅取第一行作為 summary 顯示

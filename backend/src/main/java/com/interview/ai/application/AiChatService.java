@@ -79,7 +79,7 @@ public class AiChatService {
     private final InterviewAiPolicyProvider aiPolicyProvider;
     private final InterviewTimeProvider interviewTimeProvider;
     private final ApplicationEventPublisher eventPublisher;
-    // AI 工具集（listFiles、readFile、runCommand、editProposal），透過 tool calling 讓 AI 自動呼叫
+    // AI 工具集（listDirectory、directoryTree、readFile、runCommand、editProposal），透過 tool calling 讓 AI 自動呼叫
     private final InterviewWorkspaceTools workspaceTools;
     private final ChatMemory chatMemory;
     // 用於 handleAccepted()：寫回後端檔案 + 解析 tool call arguments JSON
@@ -181,7 +181,7 @@ public class AiChatService {
             // 後端直接寫入固定回應到 memory，節省 5-30 秒等待時間和 token 費用。
             if (effectiveUserMessage.startsWith("ACCEPTED:")) {
                 String proposalId = effectiveUserMessage.substring("ACCEPTED:".length());
-                return handleAccepted(interviewId, conversationId, proposalId, assistantMsgId);
+                return handleAccepted(interviewId, conversationId, proposalId, assistantMsgId, toolSseEmitter);
             } else if (effectiveUserMessage.startsWith("REJECTED:")) {
                 String proposalId = effectiveUserMessage.substring("REJECTED:".length());
                 return handleRejected(interviewId, conversationId, proposalId, assistantMsgId);
@@ -284,7 +284,8 @@ public class AiChatService {
      * - 退而求次：找最後一個 name == "editProposal" 的 toolCall（Gemini name-based 配對）
      */
     private StreamingChatResult handleAccepted(UUID interviewId, String conversationId,
-                                               String proposalId, UUID assistantMsgId) {
+                                               String proposalId, UUID assistantMsgId,
+                                               Consumer<String> toolSseEmitter) {
         StringBuilder fullResponse = new StringBuilder();
         Flux<String> stream = Flux.defer(() -> {
             // 設計說明：直接使用底層 chatMemory（非 CrossModelChatMemory），
@@ -321,6 +322,7 @@ public class AiChatService {
 
             // 解析 FileChange 並寫檔
             int filesWritten = 0;
+            List<String> changedPaths = new ArrayList<>();
             if (tcArgs != null) {
                 try {
                     JsonNode root = objectMapper.readTree(tcArgs);
@@ -328,10 +330,51 @@ public class AiChatService {
                     if (changesNode != null && changesNode.isArray()) {
                         for (JsonNode changeNode : changesNode) {
                             String filePath = changeNode.get("file").asText();
+                            String original = changeNode.has("original") ? changeNode.get("original").asText() : null;
                             String proposed = changeNode.get("proposed").asText();
-                            fileProvider.writeFile(interviewId, filePath, proposed);
+                            // 設計說明：記錄 original/proposed 的大小與開頭，協助診斷 AI 是否傳入 partial snippet 而非完整檔案。
+                            // 若 original 不以 "package"/"import"/"#!" 等完整檔案開頭起，代表 AI 只傳了片段，
+                            // 直接寫入 proposed 會截斷整個檔案。
+                            String origHead = original != null && original.length() > 60
+                                    ? original.substring(0, 60).replace("\n", "\\n") : (original != null ? original.replace("\n", "\\n") : "null");
+                            String propHead = proposed.length() > 60
+                                    ? proposed.substring(0, 60).replace("\n", "\\n") : proposed.replace("\n", "\\n");
+                            log.info("[AI] interview={} handleAccepted: file={} original={}chars[{}] proposed={}chars[{}]",
+                                    interviewId, filePath,
+                                    original != null ? original.length() : 0, origHead,
+                                    proposed.length(), propHead);
+                            // 設計說明：AI 模型（尤其小模型如 Gemini Flash-Lite）常傳入 partial snippet 而非完整檔案，
+                            // 直接寫入 proposed 會截斷整個檔案。採用 search-replace 策略：
+                            // 1. 讀取 Docker 中的實際檔案內容
+                            // 2. normalize（CRLF→LF、trim trailing whitespace per line）提高匹配成功率
+                            // 3. 用 indexOf 定位第一個匹配（與前端 mergeProposals 一致，只替換第一個）
+                            // 4. 替換成 proposed 後寫回完整檔案
+                            String currentContent = fileProvider.readFile(interviewId, filePath);
+                            if (original != null && !original.isBlank() && currentContent != null) {
+                                String normCurrent = normalizeContent(currentContent);
+                                String normOriginal = normalizeContent(original);
+                                int idx = normCurrent.indexOf(normOriginal);
+                                if (idx >= 0) {
+                                    String merged = normCurrent.substring(0, idx)
+                                            + normalizeContent(proposed)
+                                            + normCurrent.substring(idx + normOriginal.length());
+                                    fileProvider.writeFile(interviewId, filePath, merged);
+                                    log.info("[AI] interview={} handleAccepted: patched file={} (search-replace, {}→{}chars)",
+                                            interviewId, filePath, currentContent.length(), merged.length());
+                                } else {
+                                    // Fallback：normalize 後仍找不到 original，直接寫入 proposed
+                                    fileProvider.writeFile(interviewId, filePath, proposed);
+                                    log.info("[AI] interview={} handleAccepted: wrote file={} (direct-write, original not found after normalize, proposed={}chars)",
+                                            interviewId, filePath, proposed.length());
+                                }
+                            } else {
+                                // original 為空或 currentContent 為 null，直接寫入 proposed（完整替換）
+                                fileProvider.writeFile(interviewId, filePath, proposed);
+                                log.info("[AI] interview={} handleAccepted: wrote file={} (direct-write, proposed={}chars)",
+                                        interviewId, filePath, proposed.length());
+                            }
+                            changedPaths.add(filePath);
                             filesWritten++;
-                            log.info("[AI] interview={} handleAccepted: wrote file={}", interviewId, filePath);
                         }
                     }
                 } catch (Exception e) {
@@ -341,6 +384,13 @@ public class AiChatService {
             } else {
                 log.warn("[AI] interview={} handleAccepted: no editProposal toolCall found in history, proposalId={}",
                         interviewId, proposalId);
+            }
+
+            // 設計說明：寫檔完成後，透過 SSE 發送 data-file-changed 事件通知前端從 Docker 回讀最新內容。
+            // 前端收到後執行 flushPendingSaves + refreshFiles，確保編輯器與 Docker 內容一致。
+            if (!changedPaths.isEmpty()) {
+                emitFileChangedSse(toolSseEmitter, changedPaths);
+                log.info("[AI] interview={} handleAccepted: emitted data-file-changed for paths={}", interviewId, changedPaths);
             }
 
             String responseText = "已套用 " + filesWritten + " 個檔案修改。";
@@ -523,9 +573,20 @@ public class AiChatService {
             loopCount++;
             final int currentLoop = loopCount;
 
-                // 執行 tool calls：逐一查找 ToolCallback → 執行 → 收集 ToolResponse
+            // LLM 回應後：記錄本輪待執行的工具數量與所有 tool name + 完整 args
+            List<AssistantMessage.ToolCall> pendingCalls = assistantOutput.getToolCalls();
+            log.info("[AI] loop#{} LLM returned {} tool(s) to execute: {}",
+                    currentLoop, pendingCalls.size(),
+                    pendingCalls.stream()
+                            .map(tc -> tc.name() + "(" + truncate(tc.arguments(), 150) + ")")
+                            .toList());
+
+            // 執行 tool calls：逐一查找 ToolCallback → 執行 → 收集 ToolResponse
             List<ToolResponseMessage.ToolResponse> toolResponses = new ArrayList<>();
-            for (AssistantMessage.ToolCall tc : assistantOutput.getToolCalls()) {
+            for (int i = 0; i < pendingCalls.size(); i++) {
+                AssistantMessage.ToolCall tc = pendingCalls.get(i);
+                log.info("[AI] loop#{} executing tool [{}/{}] name={} args={}",
+                        currentLoop, i + 1, pendingCalls.size(), tc.name(), truncate(tc.arguments(), 150));
                 ToolCallback cb = callbackMap.get(tc.name());
                 if (cb == null) {
                     log.warn("[AI] loop#{} unknown tool '{}'", currentLoop, tc.name());
@@ -556,6 +617,8 @@ public class AiChatService {
                         tc.id(), tc.name(), callResult != null ? callResult : "{\"result\":\"ok\"}"));
             }
 
+            log.info("[AI] loop#{} all {} tool(s) executed, writing responses to memory and returning to LLM",
+                    currentLoop, toolResponses.size());
             memory.add(conversationId, List.of(ToolResponseMessage.builder().responses(toolResponses).build()));
 
             // 設計說明：editProposal 工具執行時已透過 SSE 將 diff 發送到前端，
@@ -572,6 +635,7 @@ public class AiChatService {
 
             // 從 DB 重新讀取完整歷史建構 prompt（含 orphan cleanup + provider 適配）
             messages = memory.get(conversationId);
+            log.info("[AI] loop#{} sending {} messages back to LLM for next round", currentLoop, messages.size());
             prompt = new Prompt(messages, options);
 
             // 呼叫 model 取得下一輪回應
@@ -646,6 +710,47 @@ public class AiChatService {
 
         // 多 Generation 但無 tool calls — 回傳第一個
         return response.getResult().getOutput();
+    }
+
+    /**
+     * 設計說明：normalize 用於 handleAccepted() 的 search-replace 比對。
+     * 步驟：CRLF→LF、每行 trim trailing whitespace（保留縮排）。
+     * 與前端 mergeProposals() 的 normalizeForMerge() 邏輯一致，提高 AI partial snippet 的匹配成功率。
+     */
+    private static String normalizeContent(String text) {
+        if (text == null) return "";
+        // CRLF → LF
+        String s = text.replace("\r\n", "\n").replace("\r", "\n");
+        // trim trailing whitespace per line (preserve leading whitespace for indentation)
+        String[] lines = s.split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            sb.append(lines[i].stripTrailing());
+            if (i < lines.length - 1) sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 設計說明：寫檔完成後透過 SSE 發送 data-file-changed 事件給前端。
+     * 前端 AiChatPanel 的 useEffect 監聽此事件，呼叫 flushPendingSaves + refreshFiles，
+     * 確保編輯器從 Docker 取得最新內容而非使用本地推測的 mergeProposals 結果。
+     * filePaths 為空陣列表示全量重新載入（用於 runCommand 執行後）。
+     */
+    private void emitFileChangedSse(Consumer<String> emitter, List<String> filePaths) {
+        if (emitter == null) return;
+        try {
+            Map<String, Object> data = new HashMap<>();
+            data.put("filePaths", filePaths);
+            Map<String, Object> event = new HashMap<>();
+            event.put("type", "data-file-changed");
+            event.put("id", UUID.randomUUID().toString());
+            event.put("data", data);
+            String json = objectMapper.writeValueAsString(event);
+            emitter.accept("data: " + json + "\n\n");
+        } catch (Exception e) {
+            log.debug("Failed to emit data-file-changed SSE: {}", e.getMessage());
+        }
     }
 
     private String resolveModelId(UUID interviewId, String modelIdOverride) {

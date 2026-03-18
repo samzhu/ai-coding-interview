@@ -16,8 +16,11 @@ import java.util.UUID;
  */
 public interface InterviewFileProvider {
 
-    /** 列出工作區所有檔案（已套用 exam.yml 的 exclude 規則）。 */
-    List<ContainerFile> listFiles(UUID interviewId);
+    /** 列出工作區單層目錄（已套用 exam.yml 的 exclude 規則）。relativePath 為空時列出 workspace 根目錄。 */
+    List<ContainerFile> listDirectory(UUID interviewId, String relativePath);
+
+    /** 遞迴列出工作區目錄樹，最多 maxDepth 層（已套用 exam.yml 的 exclude 規則）。 */
+    List<ContainerFile> directoryTree(UUID interviewId, int maxDepth);
 
     /** 讀取指定路徑的檔案內容（相對或絕對路徑皆可）。 */
     String readFile(UUID interviewId, String path);

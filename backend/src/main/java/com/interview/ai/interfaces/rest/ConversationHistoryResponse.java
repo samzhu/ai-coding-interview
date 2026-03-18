@@ -68,7 +68,11 @@ public record ConversationHistoryResponse(List<ChatResponse> messages) {
         String name = tc.getOrDefault("name", "unknown");
         String args = tc.getOrDefault("arguments", "{}");
         return switch (name) {
-            case "listFiles" -> "列出工作區檔案";
+            case "listDirectory" -> {
+                String path = extractStringArg(args, "path", objectMapper);
+                yield "列出目錄 " + (path != null && !path.isBlank() ? path : "/");
+            }
+            case "directoryTree" -> "顯示目錄樹";
             case "readFile" -> {
                 String path = extractStringArg(args, "path", objectMapper);
                 yield "讀取檔案 " + (path != null ? path : "");
