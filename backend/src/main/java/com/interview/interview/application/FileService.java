@@ -119,6 +119,20 @@ public class FileService implements InterviewFileProvider {
     }
 
     /**
+     * 取得 exam.yml 中自訂的 AI system prompt。
+     * exam.yml 不存在、無法讀取、或未定義 systemPrompt 時回傳 null，由呼叫端 fallback 到平台預設。
+     */
+    @Override
+    public String getExamSystemPrompt(UUID interviewId) {
+        try {
+            WorkspaceContext ctx = resolveWorkspace(interviewId);
+            return examConfigService.getExamConfig(ctx.containerId()).systemPrompt();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * 在工作區目錄下執行 shell 指令。
      * 自動 cd 至 workspace 確保相對路徑正確，並套用指定的 timeout。
      */

@@ -92,7 +92,7 @@ public class ExamConfigService {
                                 cp.id(), cp.title(), cp.description(), cp.testCommand()))
                         .toList();
 
-        return new ExamConfig(workspace, List.copyOf(exclude), checkpoints);
+        return new ExamConfig(workspace, List.copyOf(exclude), checkpoints, raw.systemPrompt());
     }
 
     /**
@@ -101,7 +101,8 @@ public class ExamConfigService {
     record ExamConfigYaml(
             String workspace,
             List<String> exclude,
-            List<CheckpointYaml> checkpoints) {
+            List<CheckpointYaml> checkpoints,
+            String systemPrompt) {
 
         record CheckpointYaml(
                 String id,

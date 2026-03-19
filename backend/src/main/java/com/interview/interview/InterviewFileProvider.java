@@ -35,4 +35,10 @@ public interface InterviewFileProvider {
      * @param timeoutSeconds 最大執行秒數
      */
     CodeExecutionResult execInWorkspace(UUID interviewId, String command, int timeoutSeconds);
+
+    /**
+     * 取得 exam.yml 中自訂的 AI system prompt。
+     * 回傳 null 表示 exam.yml 未定義 systemPrompt，應 fallback 到平台預設。
+     */
+    String getExamSystemPrompt(UUID interviewId);
 }

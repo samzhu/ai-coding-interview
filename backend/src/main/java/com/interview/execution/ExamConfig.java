@@ -9,7 +9,8 @@ import java.util.List;
 public record ExamConfig(
         String workspace,
         List<String> exclude,
-        List<ExamCheckpoint> checkpoints) {
+        List<ExamCheckpoint> checkpoints,
+        String systemPrompt) {
 
     public record ExamCheckpoint(
             String id,
