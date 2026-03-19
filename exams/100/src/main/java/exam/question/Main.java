@@ -19,7 +19,7 @@ public class Main {
         System.out.println("Type a letter to guess, 'hint' for a hint, or 'quit' to exit.");
         System.out.println();
 
-        String word = WordBank.getRandomWord();
+        String word = WordBank.getRandomWord(Difficulty.MEDIUM);
         Game game = new Game(word);
 
         while (!game.isGameOver()) {
