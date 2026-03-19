@@ -5,10 +5,6 @@ import java.util.Set;
 
 /**
  * Core Hangman game logic.
- *
- * Known issues to fix (CP1):
- * - processGuess() does not check for duplicate guesses
- * - isGameWon() has incorrect win condition
  */
 public class Game {
 
@@ -23,9 +19,10 @@ public class Game {
         this.remainingLives = maxLives;
     }
 
-    // CP3: Add constructor that accepts Difficulty
     public Game(String word, Difficulty difficulty) {
-        throw new UnsupportedOperationException("CP3: Implement difficulty-based constructor");
+        this.word = word.toLowerCase();
+        this.maxLives = GameConfig.DEFAULT_MAX_LIVES;
+        this.remainingLives = maxLives;
     }
 
     /**
@@ -36,8 +33,6 @@ public class Game {
      */
     public boolean processGuess(char letter) {
         char lower = Character.toLowerCase(letter);
-
-        // BUG: Missing duplicate guess check — same wrong letter deducts life twice
 
         guessedLetters.add(lower);
 
@@ -67,10 +62,8 @@ public class Game {
 
     /**
      * Check if the game is won.
-     * BUG: Currently returns wrong condition.
      */
     public boolean isGameWon() {
-        // BUG: should check if all letters are guessed, not if lives <= 0
         return remainingLives <= 0;
     }
 

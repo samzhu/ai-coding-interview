@@ -1,0 +1,125 @@
+title: "Hangman 猜字遊戲"
+
+# 排除規則：.gitignore 風格 glob，這些檔案不顯示給 candidate
+# exam.yml 本身由 Spring Boot 自動排除，不需列在這裡
+exclude:
+  - ".gradle/"
+  - "build/"
+  - "bin/"
+  - "gradle/"
+  - "*.class"
+  - "*.jar"
+  - "*.bin"
+  - "*.lock"
+
+# AI 助手行為約束（面試模式）
+# 設計理念：類似 Meta AI 面試中的 "nerfed" AI——可協助理解概念，但不直接給出答案
+systemPrompt: |
+  # AI 面試助手
+
+  ## 身分
+  你是程式面試中的 AI 助手。你的角色類似一位友善但克制的同事——
+  可以協助理解概念和工具，但不會直接給出面試題的答案。
+
+  ## 語言
+  所有回覆使用繁體中文（台灣用語）。技術術語和程式碼保持原文。
+
+  ## 可用工具
+  你可透過以下工具存取候選人的工作區：
+  - **directoryTree**：顯示工作區目錄樹
+  - **listDirectory**：列出單層目錄內容
+  - **readFile**：讀取檔案內容
+  - **runCommand**：執行 shell 指令（跑測試、編譯等）
+  - **editProposal**：提出程式碼修改建議（候選人以 diff 審查後決定是否套用）
+
+  ## 行為準則
+
+  ### ✅ 你可以做的
+  - 解釋 Java 語言特性、API 用法、設計模式等通用概念
+  - 協助理解 Gradle 指令、Cucumber 測試框架、JUnit 等工具用法
+  - 解釋候選人貼給你的程式碼片段在做什麼
+  - 當候選人已經定位問題並提出解法方向時，協助完善實作細節
+  - 協助撰寫測試或驗證想法
+  - 回答「這個 method 的回傳值是什麼意思」之類的理解性問題
+
+  ### ❌ 你不可以做的
+  - 不要主動指出程式碼中的 bug 位置（即使你看得出來）
+  - 不要提供 checkpoint 題目的完整解法
+  - 不要在候選人沒有明確方向時直接告訴他「問題在第 X 行」
+  - 不要代替候選人做問題分析——如果他問「幫我找 bug」，引導他思考而非直接回答
+
+  ### 🤔 引導式回應
+  當候選人尋求幫助時，優先使用引導方式：
+  - 「你有試過用測試重現這個問題嗎？」
+  - 「你覺得這個 method 在什麼情況下會出錯？」
+  - 「你可以比較一下這兩個 method 的邏輯有什麼不同」
+  - 「試試用 ./gradlew run 實際跑看看，觀察行為是否符合預期」
+
+  如果候選人已經定位到正確的問題區域，可以給予更具體的技術協助。
+
+  ## 溝通風格
+  簡潔、友善、專業。不要長篇大論，也不要過度簡短到沒有幫助。
+  像一個好的 pair programming 夥伴——支持但不主導。
+
+# 關卡定義（按順序）
+checkpoints:
+  - id: "1"
+    title: "Bug Fix — QA 回報的遊戲邏輯問題"
+    description: |
+      QA 在測試中發現兩個可重現的 Bug：
+
+      Bug #1 — 重複猜測扣命
+      重現步驟：
+      1. 開始遊戲，單字 "hello"
+      2. 猜 'z'（錯誤）→ 剩餘 5 條命 ✓
+      3. 再猜 'z'（重複錯誤猜測）→ 預期仍為 5 條命，實際變成 4 條命 ✗
+
+      Bug #2 — 勝利判定錯誤
+      重現步驟：
+      1. 開始遊戲，單字 "cat"
+      2. 依序猜 c, a, t → 全部猜對
+      3. isGameWon() 預期回傳 true，實際回傳 false ✗
+
+      請閱讀 Game.java 找出並修復這兩個問題。
+    testCommand: "./gradlew test --tests 'exam.question.bdd.CP1Test' --no-daemon"
+
+  - id: "2"
+    title: "Feature — 實作 HintProvider 提示系統"
+    description: |
+      產品經理希望加入提示系統來改善玩家體驗。
+      請實作 HintProvider.java 中的 3 個方法：
+
+      • getLetterFrequencyHint：回傳出現頻率最高的未猜字母
+        （平手取字母序較前者，全猜完回傳 null）
+      • getPositionHint：回傳第一個未猜字母的位置（1-based，全猜完回傳 -1）
+      • calculateScore：max(0, wordLength×100 - wrongGuesses×10 - hintsUsed×20)
+
+      實作完成後可執行 ./gradlew run 手動體驗你的提示功能。
+    testCommand: "./gradlew test --tests 'exam.question.bdd.CP2Test' --no-daemon"
+
+  - id: "3"
+    title: "Hardening — 客訴調查與防禦性程式設計"
+    description: |
+      == Part A：客訴調查 ==
+
+      客服收到多位玩家反映的問題：
+
+      「我在選擇困難模式（HARD）後開始遊戲，但猜錯次數和普通模式一樣多，
+      沒有感覺比較難。」
+
+      「我選了簡單模式（EASY），結果只猜錯 6 次就輸了。
+      簡單模式不是應該可以容許更多次錯誤嗎？」
+
+      請調查 Game.java 中與難度相關的程式碼，找出問題並修復。
+
+      == Part B：Code Review 回饋 ==
+
+      資深工程師在 Code Review 中留下以下回饋：
+
+      1.「Game 建構子不檢查 null / 空字串 / 純空白 → 建議拋 IllegalArgumentException」
+      2.「遊戲結束後還能繼續猜測 → 建議拋 IllegalStateException」
+      3.「processGuess 不驗證是否為字母 → 非字母字元建議拋 IllegalArgumentException」
+      4.「HintProvider 沒處理 null/空字串 → 建議回傳安全預設值（null 或 -1）」
+
+      請依序完成客訴修復和 Code Review 改善。
+    testCommand: "./gradlew test --tests 'exam.question.bdd.CP3Test' --tests 'exam.question.bdd.CP4Test' --no-daemon"

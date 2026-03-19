@@ -1,9 +1,14 @@
 plugins {
     id 'java'
+    id 'application'
 }
 
 group = 'exam'
 version = '0.0.1-SNAPSHOT'
+
+application {
+    mainClass = 'exam.question.Main'
+}
 
 java {
     toolchain {

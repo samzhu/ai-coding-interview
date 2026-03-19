@@ -1,1 +1,0 @@
-docker build -t spike19820318/ai-coding-interview-question01:latest .
