@@ -140,6 +140,8 @@ export function InterviewWorkspace({
                   onChange={handleCodeChange}
                   language={detectLanguage(state.activeFilePath)}
                   className="h-full"
+                  interviewId={interviewId}
+                  activeFilePath={state.activeFilePath}
                 />
               )}
             </div>

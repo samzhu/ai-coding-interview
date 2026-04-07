@@ -18,6 +18,8 @@ interface CodeEditorProps {
   language?: string;
   readOnly?: boolean;
   className?: string;
+  interviewId?: string;
+  activeFilePath?: string | null;
 }
 
 export function CodeEditor({
@@ -26,6 +28,8 @@ export function CodeEditor({
   language = "java",
   readOnly = false,
   className,
+  interviewId,
+  activeFilePath,
 }: CodeEditorProps) {
   return (
     <CodeMirrorEditor
@@ -34,6 +38,8 @@ export function CodeEditor({
       language={language}
       readOnly={readOnly}
       className={className}
+      interviewId={interviewId}
+      activeFilePath={activeFilePath}
     />
   );
 }
