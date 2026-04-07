@@ -9,6 +9,12 @@ import org.springframework.test.context.ActiveProfiles;
 @CucumberContextConfiguration
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Import({TestcontainersConfiguration.class, CapturedEvents.class, SharedInterviewState.class, TestCodeExecutorConfig.class})
+@Import({
+        TestcontainersConfiguration.class,
+        CapturedEvents.class,
+        SharedInterviewState.class,
+        TestCodeExecutorConfig.class,
+        BddAsyncSyncConfig.class
+})
 public class CucumberSpringContextConfiguration {
 }
