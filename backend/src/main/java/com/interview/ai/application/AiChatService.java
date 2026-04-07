@@ -1,6 +1,8 @@
 package com.interview.ai.application;
 
 import com.interview.ai.AiChatMessageEvent;
+import com.interview.ai.AiEditAcceptedEvent;
+import com.interview.ai.AiEditRejectedEvent;
 import com.interview.ai.domain.ConversationMessage;
 import com.interview.ai.infrastructure.persistence.ConversationMessageRepository;
 import com.interview.ai.internal.AiModelRegistry;
@@ -405,6 +407,9 @@ public class AiChatService {
             try {
                 eventPublisher.publishEvent(new AiChatMessageEvent(
                         interviewId, MessageType.ASSISTANT, fullResponse.toString()));
+                // 設計說明：候選人 accept AI 提案是 Pilot Score Critical Review 維度最重要的訊號之一。
+                // 發 Spring Event 讓 monitoring 持久化、scoring 訂閱以計算 review_seconds。
+                eventPublisher.publishEvent(new AiEditAcceptedEvent(interviewId, proposalId));
             } catch (Exception e) {
                 log.error("Failed to publish assistant message event for handleAccepted interview {}", interviewId, e);
             }
@@ -436,6 +441,9 @@ public class AiChatService {
             try {
                 eventPublisher.publishEvent(new AiChatMessageEvent(
                         interviewId, MessageType.ASSISTANT, fullResponse.toString()));
+                // 設計說明：候選人 reject AI 提案是 Pilot Score Critical Review 維度的重要正面訊號，
+                // 代表候選人有批判性地審視 AI 輸出。發 Spring Event 供 scoring 計算 rejection_count。
+                eventPublisher.publishEvent(new AiEditRejectedEvent(interviewId, proposalId));
             } catch (Exception e) {
                 log.error("Failed to publish assistant message event for handleRejected interview {}", interviewId, e);
             }
