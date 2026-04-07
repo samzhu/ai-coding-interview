@@ -33,8 +33,8 @@ class InterviewScoreTest {
         assertThat(score.getOutcomeScore()).isEqualTo(1.0);
         assertThat(score.getPilotScore()).isEqualTo(3.5);
         assertThat(score.getPilotVerdict()).isEqualTo("DRIVER");
-        assertThat(score.getJudgeModel()).isEqualTo("gemini-2.5-pro");
-        assertThat(score.getJudgePromptVersion()).isEqualTo("v1.0");
+        assertThat(score.getJudgeModel()).isEqualTo("gemini-3.1-pro-preview");
+        assertThat(score.getJudgePromptVersion()).isEqualTo("v1.1");
         assertThat(score.getTimelineTokenCount()).isEqualTo(12000);
         assertThat(score.getPilotHeadline()).isEqualTo("h");
         assertThat(score.getPilotSummary()).isEqualTo("s");

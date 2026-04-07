@@ -30,7 +30,7 @@ class GeminiPilotJudgeTest {
 
     @Test
     void judge_returnsParsedPilotJudgement_whenChatClientResponds() {
-        when(chatClientLookup.findByModelId("gemini-2.5-pro")).thenReturn(Optional.of(chatClient));
+        when(chatClientLookup.findByModelId("gemini-3.1-pro-preview")).thenReturn(Optional.of(chatClient));
         var sample = sampleJudgement();
         when(chatClient.prompt().system(any(String.class)).user(any(String.class)).call()
                 .entity(PilotJudgement.class)).thenReturn(sample);
@@ -43,13 +43,13 @@ class GeminiPilotJudgeTest {
 
     @Test
     void judge_throws_whenJudgeModelNotConfigured() {
-        when(chatClientLookup.findByModelId("gemini-2.5-pro")).thenReturn(Optional.empty());
+        when(chatClientLookup.findByModelId("gemini-3.1-pro-preview")).thenReturn(Optional.empty());
 
         var judge = new GeminiPilotJudge(chatClientLookup, "fake-system-prompt");
 
         assertThatThrownBy(() -> judge.judge("any timeline"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("gemini-2.5-pro");
+                .hasMessageContaining("gemini-3.1-pro-preview");
     }
 
     private static PilotJudgement sampleJudgement() {

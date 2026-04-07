@@ -41,8 +41,8 @@ aci:
       name: GPT-5 Nano
       provider: openai
       api-key: ${aci-openai-api-key:}
-    - id: gemini-2.5-pro
-      name: "Gemini 2.5 Pro (Judge)"
+    - id: gemini-3.1-pro-preview
+      name: "Gemini 3.1 Pro Preview (Judge)"
       provider: google-genai
       api-key: ${aci-google-genai-api-key:}
   security:

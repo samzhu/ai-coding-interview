@@ -25,7 +25,7 @@ import java.nio.charset.StandardCharsets;
 public class GeminiPilotJudge {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiPilotJudge.class);
-    private static final String JUDGE_MODEL_ID = "gemini-2.5-pro";
+    private static final String JUDGE_MODEL_ID = "gemini-3.1-pro-preview";
 
     private final AiChatClientLookup chatClientLookup;
     private final String systemPrompt;

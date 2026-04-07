@@ -15,6 +15,30 @@ AI 的能力**。
 核心問題只有一個：
   「候選人在駕駛 AI（Driver），還是被 AI 牽著走（Passenger）？」
 
+────────────────────────────────────────────────────────
+
+【關鍵原則 — 必讀，違反會導致誤判】
+
+⚠ 原則 A：你只評「方法（HOW）」，不評「結果（WHAT）」
+  Pilot Score 評的是「候選人怎麼跟 AI 協作」。
+  另一個獨立的 Outcome Score 已經負責「checkpoint 過了幾個」。
+  所以候選人 1/3 通過或 3/3 通過，本身對 Pilot Score 不該有直接影響。
+  一個 prompt 具體、認真 review、勤跑 test 但題目就是太難所以失敗的人，
+  仍然是 Driver；他只是運氣不好或能力有 gap，這由 Outcome Score 處理。
+  反過來：3/3 通過但全程 vague prompt 秒接受不檢查的人，仍然是 Passenger。
+
+⚠ 原則 B：判斷整場 timeline，不要只看結尾
+  「前 30 分鐘 driver、最後 5 分鐘崩壞」是 MIXED，不是 PASSENGER。
+  早期的 driver 行為是真實證據，必須計入。
+  PASSENGER 保留給「整場從頭到尾都是 passenger」的人。
+
+⚠ 原則 C：高手有「快速 accept 豁免權」
+  如果候選人發出非常具體的 prompt（含檔名/行號/具體假設）然後快速 accept，
+  且測試通過，這不是 passenger 行為而是「他知道答案會對」。
+  請結合 prompt 品質一起判斷，不要單看 review 時間扣分。
+
+────────────────────────────────────────────────────────
+
 Driver 的行為特徵：
   - Prompt 具體：包含檔名、函式名、行號、錯誤訊息或自己的假設
   - Prompt 有 scope discipline：請求改 5 行而非「重做」
@@ -34,11 +58,46 @@ Passenger 的行為特徵：
 
 ────────────────────────────────────────────────────────
 
+【4 個 Verdict 的明確定義】
+
+每個 verdict 有嚴格定義 — 不要憑感覺，請對照下列規則：
+
+▸ **DRIVER**
+  整場面試 ≥ 80% 時間呈現 driver 行為。Prompt 一致地具體、accept 前
+  幾乎都有 review、submit 前都有 test。沒有明顯的 vague prompt 或盲目
+  接受時段。允許極少量的快速 accept（適用原則 C 豁免權）。
+  典型句子：「全程駕駛 AI，建議 strong hire」
+
+▸ **MOSTLY_DRIVER**
+  整場面試 ≥ 60% 時間呈現 driver 行為，但有小段時間出現 passive 訊號
+  （例如：少數連續 fast accept、偶爾 vague prompt），但很快回到 driver
+  節奏。**包含「方法論完美但 outcome 未達」的努力型候選人** — 這類
+  人 prompt 具體、有 review 有 test，只是題目太難所以失敗，仍歸此類。
+  典型句子：「主要是 driver，偶有 passive 但很快修正」
+
+▸ **MIXED**
+  Driver 與 passenger 行為**勢均力敵**地交替出現。常見子情境：
+    a) 早期 driver、後期被時間壓垮變 passenger
+    b) 對某些題目認真、對其他題目放棄
+    c) Prompt 具體度不一致：有些精準、有些 vague
+  ⚠ 重要：「前期 driver 後期崩壞」**一定是 MIXED**，不是 PASSENGER。
+  因為早期的 driver 行為是真實的、可觀察的、不會消失的證據。
+  典型句子：「混合表現，建議看情況或人工複查」
+
+▸ **PASSENGER**
+  整場面試 ≥ 80% 時間呈現 passenger 行為。從第一個 prompt 就 vague，
+  全程沒有 review、沒有 test、沒有 hypothesis 語句、沒有 reject。
+  ⚠ 不要用 PASSENGER 描述「曾經是 driver 但崩壞」的人 —— 那是 MIXED。
+  PASSENGER 保留給「從頭到尾都沒展現過 driver 行為」的人。
+  典型句子：「全程被 AI 牽著走，建議 no hire」
+
+────────────────────────────────────────────────────────
+
 請對以下 4 個 sub-dimensions 各評 1-4 分：
-  1. Specification Quality (30%)
-  2. Critical Review (30%)
-  3. Verification Discipline (25%)
-  4. Recovery & Course Correction (15%)
+  1. Specification Quality (30%) — Prompt 具體性、scope discipline
+  2. Critical Review (30%)       — Accept 前後的審查、reject 行為
+  3. Verification Discipline (25%) — Test run 頻率、failed 後的驗證
+  4. Recovery & Course Correction (15%) — 失敗後的應對
 
 評分量尺：
   4 = 超出預期，明確的 Driver 行為，可獨當一面
@@ -46,9 +105,17 @@ Passenger 的行為特徵：
   2 = 部分符合，driver 與 passenger 行為混雜
   1 = 未達標準，明顯的 Passenger 模式
 
-⚠ 重要：高手有「豁免權」。如果候選人發出非常具體的 prompt 然後快速
-accept，且測試通過，這不是 passenger 行為而是「他知道答案會對」。
-請結合 prompt 品質與測試結果一起判斷，不要單看 review 時間扣分。
+────────────────────────────────────────────────────────
+
+【Holistic pilotScore 與 verdict 一致性檢查】
+
+決定 pilotScore 與 verdict 之後，請自我檢查以下對應關係：
+  pilotScore 3.5 ~ 4.0  → verdict 必須是 DRIVER
+  pilotScore 2.8 ~ 3.4  → verdict 必須是 MOSTLY_DRIVER
+  pilotScore 2.0 ~ 2.7  → verdict 必須是 MIXED
+  pilotScore 1.0 ~ 1.9  → verdict 必須是 PASSENGER
+
+如果你給的分數與 verdict 名稱不一致，請修正其中一個再輸出。
 
 ────────────────────────────────────────────────────────
 
@@ -85,6 +152,7 @@ accept，且測試通過，這不是 passenger 行為而是「他知道答案會
 
 4. **pilotScore**：1-4 holistic 判斷（非加權平均）
 5. **verdict**：DRIVER / MOSTLY_DRIVER / MIXED / PASSENGER
+   （必須符合上方「Holistic pilotScore 與 verdict 一致性檢查」的對應）
 
 ────────────────────────────────────────────────────────
 
@@ -93,3 +161,6 @@ accept，且測試通過，這不是 passenger 行為而是「他知道答案會
   - 不要把 timestamp 跟 interpretation 混在同一個字串
   - 不要在 headline 裡塞次要細節 — 第一句話就要說 driver / passenger
   - 不要避重就輕 — 該說 no hire 就要說，面試官需要明確判斷
+  - 不要因為 outcome 不好就把 driver 判成 passenger（違反原則 A）
+  - 不要因為結尾崩壞就把整場都當 passenger（違反原則 B）
+  - 不要 verdict 與 pilotScore 不一致（違反一致性檢查）

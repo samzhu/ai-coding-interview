@@ -22,8 +22,8 @@ import java.util.UUID;
 @Table("interview_scores")
 public class InterviewScore {
 
-    public static final String JUDGE_MODEL = "gemini-2.5-pro";
-    public static final String JUDGE_PROMPT_VERSION = "v1.0";
+    public static final String JUDGE_MODEL = "gemini-3.1-pro-preview";
+    public static final String JUDGE_PROMPT_VERSION = "v1.1";
     public static final String SCORING_VERSION = "v1";
 
     @Id

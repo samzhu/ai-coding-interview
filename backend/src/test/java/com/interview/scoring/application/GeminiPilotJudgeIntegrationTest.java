@@ -63,15 +63,16 @@ class GeminiPilotJudgeIntegrationTest {
     }
 
     @Test
-    void strugglingButTryingFixture_pilotScoreReflectsMethodology() throws Exception {
+    void strugglingButTryingFixture_methodologyOverridesOutcome() throws Exception {
         // 設計說明：struggling_but_trying 是 driver 方法論 + 低 outcome (1/3)。
-        // 真實 Gemini 觀察結果：判斷較 outcome-aware，給 ~2.0（partially mixed），
-        // 不會因為方法論正確就拉到 3.0。原本 2.5 的 threshold 太樂觀，調整為 2.0。
-        // 仍然要高於 perfect_passenger 的 ≤2.0 邊界以區分行為品質。
+        // 此 assertion 等於在驗證 v1.1 prompt 的「原則 A」有沒有被 LLM 內化：
+        //   「Pilot Score 評方法不評結果，outcome 失敗不該把 Driver 判成 Passenger」
+        // 期望 verdict 為 DRIVER 或 MOSTLY_DRIVER（不受低 outcome 拖累）。
+        // 對應 pilotScore 必須 ≥ 2.8（per prompt 的 verdict-score 一致性檢查）。
+        // 若未來 prompt 退化失去原則 A 的教導，此測試會率先失敗。
         var result = judge.judge(loadFixture("struggling_but_trying"));
-        assertThat(result.verdict()).isIn(
-                PilotVerdict.MOSTLY_DRIVER, PilotVerdict.MIXED, PilotVerdict.PASSENGER);
-        assertThat(result.pilotScore()).isGreaterThanOrEqualTo(2.0);
+        assertThat(result.verdict()).isIn(PilotVerdict.DRIVER, PilotVerdict.MOSTLY_DRIVER);
+        assertThat(result.pilotScore()).isGreaterThanOrEqualTo(2.8);
     }
 
     @Test
