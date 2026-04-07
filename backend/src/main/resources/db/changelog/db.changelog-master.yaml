@@ -35,3 +35,5 @@ databaseChangeLog:
       file: db/changelog/029-alter-checkpoint-results-add-submission-count.sql
   - include:
       file: db/changelog/030-create-interview-activity-events.sql
+  - include:
+      file: db/changelog/031-create-interview-scores.sql
