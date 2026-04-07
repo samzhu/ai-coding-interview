@@ -22,13 +22,17 @@ class ActivityEventQueryServiceTest {
     @InjectMocks ActivityEventQueryService service;
 
     @Test
-    void findByInterviewId_delegatesToRepository() {
+    void findByInterviewId_mapsEntitiesToViews() {
         var id = UUID.randomUUID();
-        var event = ActivityEventRecord.of(id, "file.opened", Map.of());
-        when(repository.findByInterviewIdOrderByOccurredAt(id)).thenReturn(List.of(event));
+        var entity = ActivityEventRecord.of(id, "file.opened",
+                Map.of("filePath", "solution.py"));
+        when(repository.findByInterviewIdOrderByOccurredAt(id)).thenReturn(List.of(entity));
 
         var result = service.findByInterviewId(id);
 
-        assertThat(result).containsExactly(event);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).eventType()).isEqualTo("file.opened");
+        assertThat(result.get(0).payload()).containsEntry("filePath", "solution.py");
+        assertThat(result.get(0).occurredAt()).isNotNull();
     }
 }
