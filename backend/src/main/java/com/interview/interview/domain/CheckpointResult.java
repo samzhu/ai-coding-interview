@@ -43,6 +43,9 @@ public class CheckpointResult {
     @Column("updated_at")
     private Instant updatedAt;
 
+    @Column("submission_count")
+    private int submissionCount;
+
     protected CheckpointResult() {
     }
 
@@ -56,6 +59,14 @@ public class CheckpointResult {
         result.createdAt = Instant.now();
         result.updatedAt = Instant.now();
         return result;
+    }
+
+    /**
+     * 設計說明：每次 submit 觸發一次計數，讓 scoring 模組的 Recovery 維度得以計算候選人重試次數。
+     * package-private 確保只有同套件的 application service 可呼叫，外部只能透過 getter 讀取。
+     */
+    public void incrementSubmissionCount() {
+        this.submissionCount++;
     }
 
     public void startProgress(String submittedCode) {
@@ -100,4 +111,5 @@ public class CheckpointResult {
     public Instant getPassedAt() { return passedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public int getSubmissionCount() { return submissionCount; }
 }
