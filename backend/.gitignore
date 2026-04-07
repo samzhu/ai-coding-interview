@@ -63,3 +63,6 @@ spring-shell.log
 ### Secrets ###
 config/application-secrets.properties
 !config/application-secrets.properties.example
+
+# depx skill local cache
+.depx/
