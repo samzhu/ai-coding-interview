@@ -2,7 +2,7 @@ import org.springframework.boot.gradle.tasks.bundling.BootBuildImage
 
 plugins {
     java
-    id("org.springframework.boot") version "4.0.3"
+    id("org.springframework.boot") version "4.0.5"
     id("io.spring.dependency-management") version "1.1.7"
 }
 
@@ -21,9 +21,9 @@ repositories {
     maven { url = uri("https://repo.spring.io/milestone") }
 }
 
-extra["springModulithVersion"] = "2.0.2"
-extra["springAiVersion"] = "2.0.0-M2"
-extra["cucumberVersion"] = "7.20.1"
+extra["springModulithVersion"] = "2.0.5"
+extra["springAiVersion"] = "2.0.0-M4"
+extra["cucumberVersion"] = "7.34.3"
 
 dependencies {
     // Spring Boot Web

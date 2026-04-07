@@ -165,7 +165,9 @@ class PatchedGoogleGenAiChatModel extends GoogleGenAiChatModel {
      */
     private static String mapToJson(Map<String, Object> map) {
         try {
-            return ModelOptionsUtils.OBJECT_MAPPER.writeValueAsString(map);
+            // Spring AI 2.0.0-M4 將 ModelOptionsUtils.OBJECT_MAPPER 更名為 JSON_MAPPER
+            // （改用 tools.jackson.databind.json.JsonMapper）
+            return ModelOptionsUtils.JSON_MAPPER.writeValueAsString(map);
         }
         catch (Exception e) {
             throw new RuntimeException("Failed to convert map to JSON", e);
