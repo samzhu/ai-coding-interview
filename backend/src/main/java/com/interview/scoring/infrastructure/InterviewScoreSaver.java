@@ -2,7 +2,6 @@ package com.interview.scoring.infrastructure;
 
 import com.interview.scoring.domain.InterviewScore;
 import com.interview.scoring.domain.PilotJudgement;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -21,7 +20,6 @@ public class InterviewScoreSaver {
     private final InterviewScoreJdbcRepository repository;
     private final ObjectMapper objectMapper;
 
-    @Autowired
     InterviewScoreSaver(InterviewScoreJdbcRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
         this.objectMapper = objectMapper;

@@ -11,7 +11,6 @@ import com.interview.scoring.domain.InterviewScore;
 import com.interview.scoring.infrastructure.InterviewScoreSaver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Service;
 
@@ -45,7 +44,6 @@ public class ScoringOrchestrator {
     private final GeminiPilotJudge geminiJudge;
     private final InterviewScoreSaver saver;
 
-    @Autowired
     ScoringOrchestrator(
             CheckpointResultQueryService checkpointService,
             AiConversationQueryService conversationService,
