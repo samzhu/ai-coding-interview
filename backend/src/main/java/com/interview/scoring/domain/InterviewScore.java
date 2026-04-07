@@ -94,8 +94,9 @@ public class InterviewScore {
         return s;
     }
 
-    // package-private setter used by InterviewScoreSaver (Task 24) only
-    void setPilotJudgementJson(String json) {
+    // 設計說明：public so InterviewScoreSaver in infrastructure/ can write JSON before persistence.
+    // Aggregate enforces no other write paths.
+    public void setPilotJudgementJson(String json) {
         this.pilotJudgementJson = json;
     }
 
