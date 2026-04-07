@@ -1,8 +1,7 @@
 package com.interview.scoring.application;
 
-import com.interview.interview.domain.CheckpointResult;
+import com.interview.interview.CheckpointResultView;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.util.List;
 
@@ -22,8 +21,8 @@ class OutcomeCalculatorTest {
     @Test
     void allPassed_returnsFullScore() {
         var result = calculator.calculate(List.of(
-                checkpointWithStatus("PASSED"),
-                checkpointWithStatus("PASSED")
+                view("PASSED"),
+                view("PASSED")
         ));
         assertThat(result.passed()).isEqualTo(2);
         assertThat(result.total()).isEqualTo(2);
@@ -32,19 +31,17 @@ class OutcomeCalculatorTest {
     @Test
     void mixed_countsOnlyPassed() {
         var result = calculator.calculate(List.of(
-                checkpointWithStatus("PASSED"),
-                checkpointWithStatus("FAILED"),
-                checkpointWithStatus("PENDING")
+                view("PASSED"),
+                view("FAILED"),
+                view("PENDING")
         ));
         assertThat(result.passed()).isEqualTo(1);
         assertThat(result.total()).isEqualTo(3);
     }
 
-    private CheckpointResult checkpointWithStatus(String status) {
-        // 設計說明：直接 mock 而非 build real CheckpointResult，
-        // OutcomeCalculator 只在乎 status 字串。
-        var mock = Mockito.mock(CheckpointResult.class);
-        Mockito.when(mock.getStatus()).thenReturn(status);
-        return mock;
+    private CheckpointResultView view(String status) {
+        // 設計說明：record 是 immutable，直接 build 比 mock 簡單。
+        // OutcomeCalculator 只在乎 status，其他欄位填 null/0 即可。
+        return new CheckpointResultView("cp-id", 0, status, null, null, null, 0, null);
     }
 }

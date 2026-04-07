@@ -8,6 +8,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,14 +26,27 @@ class CheckpointResultQueryServiceTest {
     CheckpointResultQueryService service;
 
     @Test
-    void findByInterviewId_delegatesToRepository() {
-        var id = UUID.randomUUID();
-        var checkpoint = mock(CheckpointResult.class);
-        when(repository.findAllByInterviewId(id)).thenReturn(List.of(checkpoint));
+    void findByInterviewId_mapsEntitiesToViews() {
+        var interviewId = UUID.randomUUID();
+        var entity = mock(CheckpointResult.class);
+        when(entity.getCheckpointId()).thenReturn("cp-1");
+        when(entity.getCheckpointSequence()).thenReturn(1);
+        when(entity.getStatus()).thenReturn("PASSED");
+        when(entity.getPassedAt()).thenReturn(Instant.parse("2026-04-07T10:00:00Z"));
+        when(entity.getCreatedAt()).thenReturn(Instant.parse("2026-04-07T09:55:00Z"));
+        when(entity.getUpdatedAt()).thenReturn(Instant.parse("2026-04-07T10:00:00Z"));
+        when(entity.getSubmissionCount()).thenReturn(2);
+        when(entity.getExecutionOutput()).thenReturn("ok");
+        when(repository.findAllByInterviewId(interviewId)).thenReturn(List.of(entity));
 
-        var result = service.findByInterviewId(id);
+        var result = service.findByInterviewId(interviewId);
 
-        assertThat(result).containsExactly(checkpoint);
+        assertThat(result).hasSize(1);
+        var view = result.get(0);
+        assertThat(view.checkpointId()).isEqualTo("cp-1");
+        assertThat(view.status()).isEqualTo("PASSED");
+        assertThat(view.submissionCount()).isEqualTo(2);
+        assertThat(view.executionOutput()).isEqualTo("ok");
     }
 
     @Test
