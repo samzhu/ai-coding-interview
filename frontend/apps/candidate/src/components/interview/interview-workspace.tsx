@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { apiPost } from "@interview/shared/lib/api-client";
+import { postActivityEvent } from "@interview/shared/lib/activity-events";
 import { CodeEditor } from "@/components/code-editor/code-editor";
 import { DiffViewer } from "./diff-viewer";
 import { TerminalPanel } from "./terminal-panel";
@@ -36,6 +37,29 @@ export function InterviewWorkspace({
   const explorerResize = useResizablePanel({ initialWidth: 180, minWidth: 120, maxWidth: 480 });
   const rightPanelResize = useResizablePanel({ initialWidth: 320, minWidth: 240, maxWidth: 600, reversed: true });
   const terminalResize = useResizableHeight({ initialHeight: 192, minHeight: 100, maxHeight: 500 });
+
+  /**
+   * 設計說明：activeFilePath 每次改變時，先送 file.closed（cleanup）再送 file.opened。
+   * 用單一 useEffect + cleanup 確保配對，避免遺失 closed 事件。
+   * checkpointId 包含在 payload 供後端 TimelineBuilder 關聯到正確的 checkpoint 段落。
+   */
+  const activeFilePath = state.activeFilePath;
+  const checkpointId = state.checkpoint?.checkpointId ?? null;
+  useEffect(() => {
+    if (!activeFilePath) return;
+
+    postActivityEvent(interviewId, {
+      eventType: "file.opened",
+      payload: { filePath: activeFilePath, checkpointId },
+    });
+
+    return () => {
+      postActivityEvent(interviewId, {
+        eventType: "file.closed",
+        payload: { filePath: activeFilePath, checkpointId },
+      });
+    };
+  }, [interviewId, activeFilePath, checkpointId]);
 
   const handleExpired = useCallback(async () => {
     try {
