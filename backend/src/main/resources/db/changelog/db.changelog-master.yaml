@@ -37,3 +37,7 @@ databaseChangeLog:
       file: db/changelog/030-create-interview-activity-events.sql
   - include:
       file: db/changelog/031-create-interview-scores.sql
+  - include:
+      file: db/changelog/032-alter-interview-scores-add-version.sql
+  - include:
+      file: db/changelog/033-alter-interview-scores-judgement-jsonb-to-text.sql
