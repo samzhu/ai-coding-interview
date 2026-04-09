@@ -5,6 +5,7 @@ import com.interview.interview.application.CreateInterviewCommand;
 import com.interview.interview.application.InterviewService;
 import com.interview.interview.application.SubmitCodeCommand;
 import com.interview.interview.domain.Interview;
+import com.interview.interview.infrastructure.persistence.CheckpointResultRepository;
 import com.interview.interview.infrastructure.persistence.InterviewRepository;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
@@ -30,6 +31,9 @@ public class CheckpointProgressStepDefinitions {
 
     @Autowired
     private InterviewRepository interviewRepository;
+
+    @Autowired
+    private CheckpointResultRepository checkpointResultRepository;
 
     @Autowired
     private SharedInterviewState sharedState;
@@ -65,21 +69,40 @@ public class CheckpointProgressStepDefinitions {
     @When("I submit correct code for checkpoint 1")
     public void iSubmitCorrectCodeForCheckpoint1() {
         TestCodeExecutorConfig.TestContainerManager.forcePass();
-        var command = new SubmitCodeCommand(
-                sharedState.getCurrentInterview().getId(),
-                CHECKPOINT_IDS[0]);
-        CheckpointView view = checkpointProgressService.submitCode(command);
-        sharedState.setCurrentCheckpointView(view);
+        submitAndRefresh(CHECKPOINT_IDS[0]);
     }
 
     @When("I submit incorrect code for checkpoint 1")
     public void iSubmitIncorrectCodeForCheckpoint1() {
         TestCodeExecutorConfig.TestContainerManager.forceFail();
-        var command = new SubmitCodeCommand(
-                sharedState.getCurrentInterview().getId(),
-                CHECKPOINT_IDS[0]);
-        CheckpointView view = checkpointProgressService.submitCode(command);
-        sharedState.setCurrentCheckpointView(view);
+        submitAndRefresh(CHECKPOINT_IDS[0]);
+    }
+
+    /**
+     * 設計說明：CheckpointProgressService.submitCode() 立即回傳 IN_PROGRESS view —
+     * 真實非同步測試在 production 由 background thread 完成、前端 polling 取得最終狀態。
+     * BDD 在 BddAsyncSyncConfig 下 @Async 已同步執行，但 submitCode 回傳的 view 仍是
+     * IN_PROGRESS（local reference），DB row 已被 executeAndGrade 重新讀取後 mark
+     * PASSED/FAILED。此 helper 從 repository 重新讀取真實狀態供斷言使用。
+     */
+    private void submitAndRefresh(String checkpointId) {
+        var interviewId = sharedState.getCurrentInterview().getId();
+        checkpointProgressService.submitCode(new SubmitCodeCommand(interviewId, checkpointId));
+
+        var result = checkpointResultRepository
+                .findByInterviewIdAndCheckpointId(interviewId, checkpointId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Checkpoint not found after submit: " + checkpointId));
+
+        sharedState.setCurrentCheckpointView(new CheckpointView(
+                result.getCheckpointId(),
+                result.getCheckpointSequence(),
+                null, null, null, null,
+                result.getStatus(),
+                result.getSubmittedCode(),
+                result.getExecutionOutput(),
+                result.getPassedAt(),
+                null));
     }
 
     @When("I submit correct code for all 4 checkpoints")

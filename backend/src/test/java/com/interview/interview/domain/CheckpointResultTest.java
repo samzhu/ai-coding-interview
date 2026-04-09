@@ -73,6 +73,20 @@ class CheckpointResultTest {
     }
 
     @Test
+    @DisplayName("incrementSubmissionCount 每次呼叫加一")
+    void shouldIncrementSubmissionCount() {
+        CheckpointResult result = CheckpointResult.createPending(interviewId, checkpointId, 1);
+
+        assertThat(result.getSubmissionCount()).isEqualTo(0);
+
+        result.incrementSubmissionCount();
+        assertThat(result.getSubmissionCount()).isEqualTo(1);
+
+        result.incrementSubmissionCount();
+        assertThat(result.getSubmissionCount()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("PASSED 狀態不允許再次轉換")
     void shouldNotAllowTransitionFromPassed() {
         CheckpointResult result = CheckpointResult.createPending(interviewId, checkpointId, 1);

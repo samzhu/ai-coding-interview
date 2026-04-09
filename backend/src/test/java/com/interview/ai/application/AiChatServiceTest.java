@@ -73,21 +73,16 @@ class AiChatServiceTest {
                 workspaceTools, chatMemory, fileProvider, objectMapper);
     }
 
-    /** 建立一個 no-tool-calls ChatResponse mock，回傳指定文字。
-     *  設計說明：先 stub getOutput() 回傳真實 AssistantMessage，不再 stub .getText()，
-     *  因為 AssistantMessage(text).getText() 本身就會回傳 text。
-     *  metadata 透過 RETURNS_DEEP_STUBS 處理，updateLastAssistantTokenUsage 有 try-catch 兜底。
+    /** 建立一個 no-tool-calls ChatResponse，回傳指定文字。
+     *  設計說明：Spring AI 2.0.0-M4 起 SimpleLoggerAdvisor 在 ChatClient 路徑上會將
+     *  ChatResponse 序列化（Jackson 3），若 metadata.usage 是 Mockito 深度 stub，會因
+     *  循環引用觸發 StreamConstraintsException。改用真實 ChatResponse/Generation 物件，
+     *  避免 mock 走 Jackson 序列化的死路。
      */
     private ChatResponse mockChatResponse(String text) {
         AssistantMessage assistantMessage = new AssistantMessage(text);
-        Generation generation = Mockito.mock(Generation.class);
-        when(generation.getOutput()).thenReturn(assistantMessage);
-        ChatResponse response = Mockito.mock(ChatResponse.class, Mockito.RETURNS_DEEP_STUBS);
-        when(response.getResults()).thenReturn(List.of(generation));
-        // streamChat 仍使用 aiResponse.getResult().getOutput().getText()；
-        // lenient 避免在 chat 測試中觸發 UnnecessaryStubbingException
-        Mockito.lenient().when(response.getResult()).thenReturn(generation);
-        return response;
+        Generation generation = new Generation(assistantMessage);
+        return new ChatResponse(List.of(generation));
     }
 
     @Test

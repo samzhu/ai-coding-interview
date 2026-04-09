@@ -1,10 +1,12 @@
 package com.interview.ai.internal;
 
 import com.google.genai.Client;
+import com.interview.ai.AiChatClientLookup;
 import com.interview.ai.AiModelInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.anthropic.api.AnthropicApi;
+import com.anthropic.client.AnthropicClient;
+import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -22,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @Component
-public class AiModelRegistry {
+public class AiModelRegistry implements AiChatClientLookup {
 
     private static final Logger log = LoggerFactory.getLogger(AiModelRegistry.class);
 
@@ -65,14 +67,16 @@ public class AiModelRegistry {
                         clients.put(entry.id(), ChatClient.create(chatModel));
                     }
                     case "anthropic" -> {
-                        // 設計說明：使用 AnthropicApi + AnthropicChatModel builder 手動配置，
-                        // 與 Google GenAI 相同模式，不依賴 spring-ai-anthropic-spring-boot-starter。
-                        AnthropicApi anthropicApi = AnthropicApi.builder()
+                        // 設計說明：Spring AI 2.0.0-M3 起 Anthropic 整合改用官方 anthropic-java SDK，
+                        // 原本的 AnthropicApi 已被移除。改為先以 AnthropicOkHttpClient.builder() 建立
+                        // AnthropicClient，再透過 AnthropicChatModel.builder().anthropicClient(...) 注入。
+                        // builder 的 defaultOptions 也已改名為 options。
+                        AnthropicClient anthropicClient = AnthropicOkHttpClient.builder()
                                 .apiKey(entry.apiKey())
                                 .build();
                         AnthropicChatModel chatModel = AnthropicChatModel.builder()
-                                .anthropicApi(anthropicApi)
-                                .defaultOptions(AnthropicChatOptions.builder()
+                                .anthropicClient(anthropicClient)
+                                .options(AnthropicChatOptions.builder()
                                         .model(entry.id())
                                         // 設計說明：Anthropic API 要求 max_tokens 必填，未設定會回 400 錯誤。
                                         // 16384 對應 Claude 3/4 系列的合理上限，足以容納完整面試回應。
@@ -115,6 +119,11 @@ public class AiModelRegistry {
     }
 
     public Optional<ChatClient> getChatClient(String modelId) {
+        return Optional.ofNullable(clients.get(modelId));
+    }
+
+    @Override
+    public Optional<ChatClient> findByModelId(String modelId) {
         return Optional.ofNullable(clients.get(modelId));
     }
 

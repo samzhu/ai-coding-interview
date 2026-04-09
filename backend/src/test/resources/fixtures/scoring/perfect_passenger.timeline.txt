@@ -1,0 +1,46 @@
+=== INTERVIEW TIMELINE ===
+duration: 32:00
+checkpoints_total: 3
+checkpoints_passed: 0
+
+[00:00] INTERVIEW_START
+[00:30] CANDIDATE> "solve this problem"
+[00:45] AI_PROPOSE: solution.py
+[00:46] AI_ACCEPT: solution.py    review_seconds=1   <FAST>
+[00:48] CHECKPOINT_SUBMIT: cp1 -> FAILED
+[01:00] CANDIDATE> "fix it"
+[01:20] AI_PROPOSE: solution.py
+[01:21] AI_ACCEPT: solution.py    review_seconds=1   <FAST>
+[01:23] CHECKPOINT_SUBMIT: cp1 -> FAILED
+[01:40] CANDIDATE> "still failing"
+[02:00] AI_PROPOSE: solution.py
+[02:01] AI_ACCEPT: solution.py    review_seconds=1   <FAST>
+[02:03] CHECKPOINT_SUBMIT: cp1 -> FAILED
+[03:00] CANDIDATE> "what should I do"
+[03:30] AI> "Let me see the test expectations..."
+[04:00] CANDIDATE> "just write the solution"
+[04:20] AI_PROPOSE: solution.py
+[04:21] AI_ACCEPT: solution.py    review_seconds=1   <FAST>
+[04:23] CHECKPOINT_SUBMIT: cp1 -> FAILED
+[10:00] CANDIDATE> "do cp2"
+[10:20] AI_PROPOSE: api.py
+[10:21] AI_ACCEPT: api.py    review_seconds=1   <FAST>
+[10:23] CHECKPOINT_SUBMIT: cp2 -> FAILED
+[15:00] CANDIDATE> "cp3 too"
+[15:25] AI_PROPOSE: api.py
+[15:26] AI_ACCEPT: api.py    review_seconds=1   <FAST>
+[15:28] CHECKPOINT_SUBMIT: cp3 -> FAILED
+[16:00] (no activity for 16 minutes)
+[32:00] INTERVIEW_END
+
+=== AGGREGATE STATS ===
+total_prompts:           8
+total_assistant_msgs:    1
+total_proposals:         6
+total_accepts:           6
+total_rejects:           0
+manual_edits:            0
+test_runs:               0
+fast_accepts (<5s):      6
+files_opened:            0
+checkpoint_submits:      6
