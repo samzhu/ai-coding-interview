@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend
 
-## Getting Started
+npm Workspaces monorepo，使用 Next.js 16.1.6、React 19 與共用套件 @interview/shared。完整設定先讀 [本機建置與操作手冊](../docs/getting-started-local.md)。
 
-First, run the development server:
+## 開發模式
+
+準備 Node 24/npm，先啟動 Backend 8080。以下在 frontend/ 執行：
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+NEXT_PUBLIC_CANDIDATE_URL=http://localhost:3001 npm run dev:admin
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+另一個 terminal，在 frontend/ 執行：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run dev:candidate
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Admin 使用 3000、Candidate 使用 3001。預設 HTTP API 經 Next.js rewrite 到 Backend，WebSocket 直接連 Backend。
 
-## Learn More
+## 建置
 
-To learn more about Next.js, take a look at the following resources:
+在 frontend/ 執行：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run build:admin
+npm run build:candidate
+npm run build:export:admin
+npm run build:export:candidate
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Docker 使用 static export + Nginx。NEXT_PUBLIC_API_BASE 與 Admin 的 NEXT_PUBLIC_CANDIDATE_URL 在 build 時寫入靜態檔；修改後需要重建前端 image。
 
-## Deploy on Vercel
+## 目錄
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- apps/admin：建立面試、題目清單與監看。
+- apps/candidate：候選人 editor、terminal、測試與 AI。
+- packages/shared：共用 API client、型別與 UI。

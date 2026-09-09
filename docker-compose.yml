@@ -1,0 +1,74 @@
+# Local full-stack demo and acceptance environment only. Do not use this file for production deployment.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: interview_db
+      POSTGRES_USER: interview
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-interview_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interview -d interview_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dind:
+    image: docker:27-dind
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - dind-storage:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    image: ai-coding-interview-backend:latest
+    environment:
+      # The local image does not receive backend/config/application-dev.yaml.
+      # Keep OAuth2 disabled here; a production manifest must enable it and provide a JWT issuer.
+      ACI_SECURITY_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/interview_db
+      SPRING_DATASOURCE_USERNAME: interview
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-interview_dev}
+      # Spring resolves aci-google-genai-api-key from this canonical env name.
+      ACI_GOOGLE_GENAI_API_KEY: ${GOOGLE_GENAI_API_KEY:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      DOCKER_HOST: tcp://dind:2375
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Nginx serves static export; env vars injected at build time
+  admin:
+    build:
+      context: ./frontend
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8080
+        NEXT_PUBLIC_CANDIDATE_URL: http://localhost:3001
+    ports:
+      - "3000:80"
+
+  candidate:
+    build:
+      context: ./frontend
+      dockerfile: apps/candidate/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8080
+    ports:
+      - "3001:80"
+
+volumes:
+  postgres_data:
+  dind-storage:

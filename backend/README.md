@@ -1,99 +1,41 @@
-# Backend — AI Coding Interview
+# Backend
 
-## 前置需求
+Spring Boot 4.0.5、Java 25、Gradle wrapper 9.3.0。第一次使用先讀 [本機建置與操作手冊](../docs/getting-started-local.md)，包含 Docker 與 bootRun 兩種方式。
 
-| 工具 | 版本 |
-|------|------|
-| Java | 21（LTS）以上 |
-| Docker Desktop | 任意最新版（需在背景執行） |
+## 本機開發
 
-> `./gradlew bootRun` 會透過 **spring-boot-docker-compose** 自動啟動 `compose.yaml` 中定義的容器（PostgreSQL），不需要手動執行 `docker compose up`。
-
----
-
-## 快速啟動
+先停止 root Compose，避免 PostgreSQL 5432 與 Backend 8080 衝突。以下從 repo 根目錄執行：
 
 ```bash
+docker compose stop
+docker build -t spike19820318/ai-coding-interview-question01:latest exams/100
 cd backend
 ./gradlew bootRun
 ```
 
-Spring Boot 啟動時會自動執行：
-1. 啟動 `compose.yaml` 中的 **PostgreSQL**（port 5432）
-2. 執行 Liquibase 資料庫遷移
-3. 掃描並載入 `resources/questions/` 下的題目定義
+bootRun 會使用 backend/compose.yaml 啟動 PostgreSQL，執行 Liquibase 並載入 classpath questions/*.yaml。考題執行使用 host Docker，預設 unix:///var/run/docker.sock。
 
----
+在 backend/config/application-secrets.properties 填寫設定；外部 dev profile 會載入它：
 
-## Docker 執行模式
-
-程式碼執行（`execution` 模組）使用 Docker 容器隔離執行環境。`application.yml` 預設透過 **Unix socket** 連線本機 Docker（OrbStack / Docker Desktop）。
-
-### A. Local Docker Socket（預設）
-
-`application.yml` 預設值：
-
-```yaml
-execution:
-  docker:
-    host: ${DOCKER_HOST:unix:///var/run/docker.sock}
+```properties
+aci-security-enabled=false
+aci-google-genai-api-key=
+aci-anthropic-api-key=
+aci-openai-api-key=
 ```
 
-本地開發直接使用 OrbStack 或 Docker Desktop 提供的 socket，不需要額外的 DinD 容器。
+這份檔案不提交。Docker 模式不會自動讀取它，請參考手冊的 Compose env 設定。
 
-**首次使用需確認執行 image 已在本機：**
+## 建置與測試
 
-```bash
-docker pull eclipse-temurin:25-jdk
-```
-
-### B. Docker Remote TCP（生產環境）
-
-生產環境或 CI 需要連線遠端 Docker daemon 時，透過環境變數覆蓋：
+以下在 backend/ 執行：
 
 ```bash
-DOCKER_HOST=tcp://<host>:2375 ./gradlew bootRun
-```
-
-或在部署環境設定 `DOCKER_HOST` 環境變數。
-
----
-
-## 前端 Dev Server
-
-```bash
-# 受測者 App（port 3001）
-cd frontend && npm run dev:candidate
-
-# 面試官 App（port 3000）
-cd frontend && npm run dev:admin
-```
-
----
-
-## 環境變數速查表
-
-| 變數名稱 | 預設值 | 說明 |
-|----------|--------|------|
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker 連線位址；生產環境改為 TCP 位址（如 `tcp://<host>:2375`） |
-| `GOOGLE_GENAI_API_KEY` | （空）| Google Gemini API 金鑰 |
-| `ADMIN_TOKEN` | （空）| Admin API 存取 token |
-
----
-
-## 執行測試
-
-```bash
-cd backend
 ./gradlew test
-```
-
-測試使用 `application-test.yml`（`unix:///var/run/docker.sock`），直接連線本機 Docker，**不經過 DinD**。
-
-```bash
-# 只跑 BDD 場景
-./gradlew test --tests "com.interview.*.bdd.*"
-
-# 只跑特定模組
 ./gradlew test --tests "com.interview.interview.domain.*"
+./gradlew bootBuildImage -x test
 ```
+
+整合測試需要 Docker/Testcontainers。bootBuildImage 輸出 ai-coding-interview-backend:latest；-x test 表示略過測試。
+
+模型清單在 src/main/resources/application.yaml 的 aci.models。改 Java 或 resources 後，Docker 模式需要重建 Backend image 並 recreate；詳見手冊第 6 章。

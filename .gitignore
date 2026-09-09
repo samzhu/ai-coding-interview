@@ -35,5 +35,9 @@ node_modules/
 .next/
 out/
 
-docs
-docker-compose.yml
+# Keep local research and generated visuals private; publish the onboarding set.
+docs/*
+!docs/getting-started-local.md
+!docs/infrastructure/
+docs/infrastructure/*
+!docs/infrastructure/local-setup-verification.md
