@@ -10,7 +10,7 @@ import java.util.List;
  * 設計說明：
  * 從 @Value 遷移至 @ConfigurationProperties，取得型別安全與 IDE 自動補全。
  * corsAllowedOrigins 型別為 List<String>，Spring Boot relaxed binding 自動將
- * 逗號分隔字串（環境變數 CORS_ALLOWED_ORIGINS）拆分為 List，免去手動 split 邏輯。
+ * 逗號分隔字串（例如 aci-cors-allowed-origins）拆分為 List，免去手動 split 邏輯。
  *
  * @ConfigurationPropertiesScan 已在 InterviewPlatformApplication 啟用，無需額外 @Bean 宣告。
  */
@@ -19,9 +19,18 @@ public record AciSecurityProperties(
         boolean enabled,
         List<String> corsAllowedOrigins
 ) {
+    private static final List<String> DEFAULT_CORS_ALLOWED_ORIGINS = List.of(
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "http://*:3000",
+            "http://*:3001"
+    );
+
     public AciSecurityProperties {
         if (corsAllowedOrigins == null) {
-            corsAllowedOrigins = List.of("http://localhost:3000", "http://localhost:3001");
+            corsAllowedOrigins = DEFAULT_CORS_ALLOWED_ORIGINS;
         }
     }
 }

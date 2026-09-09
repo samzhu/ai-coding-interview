@@ -15,6 +15,16 @@
 
 ## 1. 先理解平台怎麼運作
 
+建議先開啟 [本機 Docker Compose 互動式架構圖](./architecture/local-docker-compose-architecture.html)，了解 Admin、Candidate、Backend、PostgreSQL、DinD 與考題容器之間的關係，再依本手冊操作。
+
+下載 repo 後可直接用瀏覽器開啟 HTML；macOS 在 repo 根目錄執行：
+
+```bash
+open docs/architecture/local-docker-compose-architecture.html
+```
+
+GitHub 的檔案頁面會顯示 HTML 原始碼，請下載後開啟。圖的內容與程式內嵌於 HTML，字型使用 Google Fonts；圖中來源連結指向製圖時的版本，實際部署指令與設定以本手冊和目前 repo 為準。
+
 | 元件 | 責任 | 本機入口 |
 |---|---|---|
 | Admin | 建立面試、取得邀請、監看 | http://localhost:3000 |

@@ -6,7 +6,7 @@ services:
       - 'POSTGRES_PASSWORD=interview'
       - 'POSTGRES_USER=interview'
     ports:
-      - '5432'
+      - '5432:5432'
 
   # dind:
   #   image: docker:27-dind

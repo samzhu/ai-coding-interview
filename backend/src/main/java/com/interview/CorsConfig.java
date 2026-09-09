@@ -11,8 +11,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Admin 採用 SPA + Bearer token 模式，不再需要 credentials（Cookie）。
  * allowCredentials(false) 搭配 allowedOriginPatterns 即可支援跨域 API 呼叫。
  * 允許的 origins 透過 aci.security.cors-allowed-origins 設定，
- * 預設含 localhost:3000（admin）與 localhost:3001（candidate）以利本地開發。
- * prod 環境透過 CORS_ALLOWED_ORIGINS 環境變數設為實際域名。
+ * 預設含 localhost/127.0.0.1 與 LAN/IP 的 3000（admin）與 3001（candidate）
+ * 以利本地開發。prod 環境透過 aci-cors-allowed-origins 設為實際域名。
  * corsAllowedOrigins 由 AciSecurityProperties 提供（List<String>），
  * Spring Boot relaxed binding 自動將逗號分隔字串拆分，免去手動 split 邏輯。
  */

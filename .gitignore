@@ -41,3 +41,6 @@ docs/*
 !docs/infrastructure/
 docs/infrastructure/*
 !docs/infrastructure/local-setup-verification.md
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/local-docker-compose-architecture.html

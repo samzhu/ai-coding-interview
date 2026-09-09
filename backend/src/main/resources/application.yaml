@@ -45,8 +45,9 @@ aci:
     # 設為 true 啟用完整 OAuth2 安全機制（需設定 aci-oauth2-issuer-uri）。
     # 預設 false：所有 API 公開，方便本地開發。
     enabled: ${aci-security-enabled:true}
-    # CORS 允許的前端 Origin（逗號分隔），prod 應設為實際域名。
-    cors-allowed-origins: ${aci-cors-allowed-origins:http://localhost:3000,http://localhost:3001}
+    # CORS 允許的前端 Origin patterns（逗號分隔），prod 應設為實際域名。
+    # 預設支援 localhost、127.0.0.1，以及 LAN/IP 開發入口的 3000/3001 ports。
+    cors-allowed-origins: ${aci-cors-allowed-origins:http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001,http://*:3000,http://*:3001}
 
 server:
   port: 8080
