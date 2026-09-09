@@ -31,3 +31,13 @@ databaseChangeLog:
       file: db/changelog/027-alter-ai-conversations-allow-tool-role.sql
   - include:
       file: db/changelog/028-alter-ai-conversations-add-token-usage.sql
+  - include:
+      file: db/changelog/029-alter-checkpoint-results-add-submission-count.sql
+  - include:
+      file: db/changelog/030-create-interview-activity-events.sql
+  - include:
+      file: db/changelog/031-create-interview-scores.sql
+  - include:
+      file: db/changelog/032-alter-interview-scores-add-version.sql
+  - include:
+      file: db/changelog/033-alter-interview-scores-judgement-jsonb-to-text.sql

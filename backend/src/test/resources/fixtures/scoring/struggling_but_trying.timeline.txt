@@ -1,0 +1,55 @@
+=== INTERVIEW TIMELINE ===
+duration: 50:00
+checkpoints_total: 3
+checkpoints_passed: 1
+
+[00:00] INTERVIEW_START
+[00:30] FILE_OPENED: solution.py
+[01:00] FILE_OPENED: test_solution.py
+[02:30] CANDIDATE> "I see the test expects a Trie data structure for prefix matching but I'm not sure how to implement insert. Can you explain the basic structure first before we write code?"
+[02:45] AI> "A Trie is a tree where each node has children indexed by character..."
+[04:00] CANDIDATE> "OK, write a basic Trie class with insert(word) and search(prefix). I want to read it and understand each line."
+[04:30] AI_PROPOSE: solution.py
+[04:35] FILE_OPENED: solution.py
+[05:30] AI_ACCEPT: solution.py    review_seconds=60
+[05:35] TERMINAL: pytest test_solution.py::test_basic_trie
+[06:00] CHECKPOINT_SUBMIT: cp1 -> PASSED
+[10:00] CANDIDATE> "cp2 wants delete with cleanup of empty branches. I think we need to recurse and remove children. Let me try first."
+[10:30] CANDIDATE> "Add a delete(word) that removes the word and prunes empty branches."
+[11:00] AI_PROPOSE: solution.py
+[11:30] FILE_OPENED: solution.py
+[12:00] AI_ACCEPT: solution.py    review_seconds=30
+[12:05] TERMINAL: pytest test_solution.py::test_delete
+[12:20] CHECKPOINT_SUBMIT: cp2 -> FAILED
+[13:00] CANDIDATE> "Test failure says 'tree still has node a'. I think my prune logic is wrong — it doesn't remove nodes that became leaves after delete."
+[13:30] AI_PROPOSE: solution.py
+[13:50] FILE_OPENED: solution.py
+[14:30] AI_ACCEPT: solution.py    review_seconds=40
+[14:35] TERMINAL: pytest test_solution.py::test_delete
+[14:50] CHECKPOINT_SUBMIT: cp2 -> FAILED
+[15:30] CANDIDATE> "Still failing. The recursion is not bubbling the prune up correctly. Let me think about this differently."
+[20:00] CANDIDATE> "I'm stuck on cp2. Let me try cp3 instead."
+[20:30] CANDIDATE> "cp3 wants autocomplete suggestions sorted by frequency. I need to add a count to each terminal node."
+[21:00] AI_PROPOSE: solution.py
+[21:30] FILE_OPENED: solution.py
+[22:00] AI_ACCEPT: solution.py    review_seconds=30
+[22:05] TERMINAL: pytest test_solution.py::test_autocomplete
+[22:30] CHECKPOINT_SUBMIT: cp3 -> FAILED
+[23:00] CANDIDATE> "Failed because results are not sorted descending. Need to sort by count first then alphabetical."
+[23:30] AI_PROPOSE: solution.py
+[24:00] AI_ACCEPT: solution.py    review_seconds=30
+[24:05] TERMINAL: pytest test_solution.py::test_autocomplete
+[24:30] CHECKPOINT_SUBMIT: cp3 -> FAILED
+[50:00] INTERVIEW_END
+
+=== AGGREGATE STATS ===
+total_prompts:           10
+total_assistant_msgs:    1
+total_proposals:         6
+total_accepts:           6
+total_rejects:           0
+manual_edits:            0
+test_runs:               6
+fast_accepts (<5s):      0
+files_opened:            8
+checkpoint_submits:      5

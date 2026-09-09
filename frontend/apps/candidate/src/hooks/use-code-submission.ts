@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useEffect } from "react";
 import { apiPost, apiGet } from "@interview/shared/lib/api-client";
+import { postActivityEvent } from "@interview/shared/lib/activity-events";
 import { useInterview } from "@/contexts/interview-context";
 import type { CheckpointResultResponse, ExecutionStatusResponse } from "@interview/shared/types";
 
@@ -83,6 +84,13 @@ export function useCodeSubmission() {
     if (!state.checkpoint || state.isRunning) return;
 
     setRunning(true);
+
+    // 設計說明：submit() 是候選人唯一觸發測試執行的路徑，因此這裡是 terminal.test.run 最準確的插入點。
+    // checkpointId 讓後端 TimelineBuilder 能將測試執行關聯到對應的 checkpoint 段落。
+    postActivityEvent(state.interviewId!, {
+      eventType: "terminal.test.run",
+      payload: { checkpointId: state.checkpoint.checkpointId },
+    });
 
     try {
       // 檔案已透過 debounced write 寫入 container，直接觸發評分

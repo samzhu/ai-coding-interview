@@ -1,5 +1,6 @@
 package com.interview.ai.internal;
 
+import com.interview.ai.AiEditProposalEvent;
 import com.interview.ai.AiToolExecutionEvent;
 import com.interview.execution.CodeExecutionResult;
 import com.interview.execution.ContainerFile;
@@ -259,6 +260,16 @@ public class InterviewWorkspaceTools {
         // 額外的 tool badge 只會讓前端顯示 "unknown editProposal"（多餘且令人困惑）。
         for (FileChange change : changes) {
             emitEditProposalEvent(toolContext, proposalId, change.file(), change.original(), change.proposed());
+            // 設計說明：除既有 SSE 外另發 Spring Event，讓 monitoring 可持久化（@ApplicationModuleListener）
+            // 與 scoring 模組訂閱。SSE 走 fire-and-forget，Spring Event 走 Event Publication Registry retry。
+            // diff 以「原始 → 建議」格式保存，供 scoring TimelineBuilder 重建面試活動時段使用。
+            String diff = "original:\n" + change.original() + "\nproposed:\n" + change.proposed();
+            eventPublisher.publishEvent(new AiEditProposalEvent(
+                    interviewId,
+                    proposalId,
+                    change.file(),
+                    diff
+            ));
         }
 
         // 設計說明：回傳列舉狀態即可。proposalId 不需放在回傳值中——

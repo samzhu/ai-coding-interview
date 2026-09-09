@@ -1,0 +1,36 @@
+=== INTERVIEW TIMELINE ===
+duration: 55:00
+checkpoints_total: 3
+checkpoints_passed: 3
+
+[00:00] INTERVIEW_START
+[00:15] FILE_OPENED: solution.py
+[01:00] MANUAL_EDIT: solution.py (Δ+45)
+[02:30] MANUAL_EDIT: solution.py (Δ+120)
+[05:00] TERMINAL: pytest test_solution.py
+[06:00] MANUAL_EDIT: solution.py (Δ+30)
+[07:00] TERMINAL: pytest test_solution.py
+[08:00] CHECKPOINT_SUBMIT: cp1 -> PASSED
+[10:00] FILE_OPENED: api.py
+[12:00] MANUAL_EDIT: api.py (Δ+85)
+[15:00] MANUAL_EDIT: api.py (Δ-10)
+[18:00] TERMINAL: pytest test_api.py
+[20:00] CHECKPOINT_SUBMIT: cp2 -> PASSED
+[25:00] MANUAL_EDIT: api.py (Δ+200)
+[30:00] TERMINAL: pytest test_api.py
+[35:00] MANUAL_EDIT: api.py (Δ+15)
+[36:00] TERMINAL: pytest test_api.py
+[40:00] CHECKPOINT_SUBMIT: cp3 -> PASSED
+[55:00] INTERVIEW_END
+
+=== AGGREGATE STATS ===
+total_prompts:           0
+total_assistant_msgs:    0
+total_proposals:         0
+total_accepts:           0
+total_rejects:           0
+manual_edits:            6
+test_runs:               5
+fast_accepts (<5s):      0
+files_opened:            2
+checkpoint_submits:      3

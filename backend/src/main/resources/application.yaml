@@ -41,6 +41,10 @@ aci:
       name: GPT-5 Nano
       provider: openai
       api-key: ${aci-openai-api-key:}
+    - id: gemini-3.1-pro-preview
+      name: "Gemini 3.1 Pro Preview (Judge)"
+      provider: google-genai
+      api-key: ${aci-google-genai-api-key:}
   security:
     # 設為 true 啟用完整 OAuth2 安全機制（需設定 aci-oauth2-issuer-uri）。
     # 預設 false：所有 API 公開，方便本地開發。

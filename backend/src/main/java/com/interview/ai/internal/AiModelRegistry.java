@@ -1,6 +1,7 @@
 package com.interview.ai.internal;
 
 import com.google.genai.Client;
+import com.interview.ai.AiChatClientLookup;
 import com.interview.ai.AiModelInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @Component
-public class AiModelRegistry {
+public class AiModelRegistry implements AiChatClientLookup {
 
     private static final Logger log = LoggerFactory.getLogger(AiModelRegistry.class);
 
@@ -118,6 +119,11 @@ public class AiModelRegistry {
     }
 
     public Optional<ChatClient> getChatClient(String modelId) {
+        return Optional.ofNullable(clients.get(modelId));
+    }
+
+    @Override
+    public Optional<ChatClient> findByModelId(String modelId) {
         return Optional.ofNullable(clients.get(modelId));
     }
 

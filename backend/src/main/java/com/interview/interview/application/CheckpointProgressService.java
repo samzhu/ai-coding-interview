@@ -140,6 +140,7 @@ public class CheckpointProgressService {
         var examConfig = examConfigService.getExamConfig(containerId);
         var checkpoint = findCheckpoint(examConfig, command.checkpointId());
 
+        result.incrementSubmissionCount();
         result.startProgress("submitted");
         checkpointResultRepository.save(result);
 

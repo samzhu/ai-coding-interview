@@ -1,0 +1,49 @@
+=== INTERVIEW TIMELINE ===
+duration: 47:22
+checkpoints_total: 3
+checkpoints_passed: 2
+
+[00:00] INTERVIEW_START
+[00:18] FILE_OPENED: solution.py
+[00:42] FILE_OPENED: test_solution.py
+[01:15] CANDIDATE> "Looking at solution.py line 23, the add_task method seems to ignore the priority parameter. Can you confirm where ordering happens?"
+[01:18] AI> "You're right, the current sort uses only created_at."
+[01:55] CANDIDATE> "OK, modify add_task to insert sorted by (priority, created_at). Don't change the public signature."
+[02:10] AI_PROPOSE: solution.py
+[02:14] FILE_OPENED: solution.py
+[02:38] AI_ACCEPT: solution.py    review_seconds=28
+[02:40] TERMINAL: pytest test_solution.py
+[02:55] CHECKPOINT_SUBMIT: cp1 -> PASSED
+[10:00] FILE_OPENED: api.py
+[11:00] CANDIDATE> "Add ownership check on delete_task in api.py. Return 403 if requester is not the owner."
+[11:15] AI_PROPOSE: api.py
+[11:30] FILE_OPENED: api.py
+[12:05] AI_ACCEPT: api.py    review_seconds=35
+[12:07] TERMINAL: pytest test_api.py
+[12:30] CHECKPOINT_SUBMIT: cp2 -> PASSED
+[33:00] CANDIDATE> "cp3 needs pagination"
+[33:15] AI_PROPOSE: api.py
+[33:16] AI_ACCEPT: api.py    review_seconds=1   <FAST>
+[33:18] CHECKPOINT_SUBMIT: cp3 -> FAILED
+[35:10] CANDIDATE> "fix it"
+[35:13] AI_PROPOSE: api.py
+[35:14] AI_ACCEPT: api.py    review_seconds=1   <FAST>
+[35:16] CHECKPOINT_SUBMIT: cp3 -> FAILED
+[35:30] CANDIDATE> "still failing"
+[35:33] AI_PROPOSE: api.py
+[35:34] AI_ACCEPT: api.py    review_seconds=1   <FAST>
+[35:36] CHECKPOINT_SUBMIT: cp3 -> FAILED
+[36:00] (no activity for 11 minutes)
+[47:22] INTERVIEW_END
+
+=== AGGREGATE STATS ===
+total_prompts:           7
+total_assistant_msgs:    1
+total_proposals:         6
+total_accepts:           6
+total_rejects:           0
+manual_edits:            0
+test_runs:               2
+fast_accepts (<5s):      3
+files_opened:            4
+checkpoint_submits:      5

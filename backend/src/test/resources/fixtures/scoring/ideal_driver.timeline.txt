@@ -1,0 +1,46 @@
+=== INTERVIEW TIMELINE ===
+duration: 47:30
+checkpoints_total: 3
+checkpoints_passed: 3
+
+[00:00] INTERVIEW_START
+[00:18] FILE_OPENED: solution.py
+[00:42] FILE_OPENED: test_solution.py
+[01:15] CANDIDATE> "Looking at solution.py line 23, the add_task method seems to ignore the priority parameter. The test expects priority to affect ordering. Can you confirm where ordering happens?"
+[01:18] AI> "You're right, the current sort uses only created_at. The priority field is parsed but never compared in the sort key."
+[01:55] CANDIDATE> "OK, modify add_task to insert sorted by (priority desc, created_at asc). Don't change the public signature."
+[02:10] AI_PROPOSE: solution.py
+[02:14] FILE_OPENED: solution.py
+[02:38] AI_ACCEPT: solution.py    review_seconds=28
+[02:40] TERMINAL: pytest test_solution.py::test_priority
+[02:43] TERMINAL: pytest test_solution.py
+[02:55] CHECKPOINT_SUBMIT: cp1 -> PASSED
+[05:00] FILE_OPENED: api.py
+[06:30] CANDIDATE> "I see api.py has a delete_task endpoint that doesn't check ownership. Looking at the test on line 45, it expects 403 when a different user tries to delete. Let me add an ownership check."
+[06:35] AI> "The current handler accepts any authenticated user. You'll want to compare the task's owner_id to the request user."
+[07:00] CANDIDATE> "Add the ownership check after the existing auth check. Return 403 with the existing error helper."
+[07:15] AI_PROPOSE: api.py
+[07:20] FILE_OPENED: api.py
+[07:55] AI_ACCEPT: api.py    review_seconds=35
+[07:57] TERMINAL: pytest test_api.py
+[09:00] CHECKPOINT_SUBMIT: cp2 -> PASSED
+[12:00] CANDIDATE> "For cp3 the test wants pagination on list_tasks. Default page size 20, max 100. I'll add page and page_size query params."
+[12:30] AI_PROPOSE: api.py
+[12:35] FILE_OPENED: api.py
+[13:10] AI_ACCEPT: api.py    review_seconds=35
+[13:15] TERMINAL: pytest test_api.py::test_pagination
+[13:30] TERMINAL: pytest test_solution.py test_api.py
+[14:00] CHECKPOINT_SUBMIT: cp3 -> PASSED
+[47:30] INTERVIEW_END
+
+=== AGGREGATE STATS ===
+total_prompts:           7
+total_assistant_msgs:    3
+total_proposals:         3
+total_accepts:           3
+total_rejects:           0
+manual_edits:            0
+test_runs:               6
+fast_accepts (<5s):      0
+files_opened:            5
+checkpoint_submits:      3
